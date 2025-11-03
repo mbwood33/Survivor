@@ -1,0 +1,94 @@
+Remaining milestones for a basic prototype
+A) Player survivability + run flow
+
+HP & damage UI: tiny HP bar + numeric HP.
+
+Death handling: freeze input → results screen stub (time survived, kills).
+
+Run timer: mm:ss on HUD.
+
+Pause menu: pause/resume; show controls; quit-to-title stub.
+
+B) Basic loot → level ups (super simple)
+
+XP/level bar already wired → on level-up:
+
+For now: auto-apply a random small buff (e.g., +5% damage/speed) or cycle between 3 fixed buffs.
+
+Log the upgrade to a tiny “build” panel (text list).
+
+C) Minimal content data
+
+Hardcode one weapon per variant + one enemy archetype.
+
+Put stats in a single TS/JSON object so you can tweak without code changes.
+
+Seeded RNG utility (one global seed): ensures reproducible spawns.
+
+D) Audio & feedback (bare minimum)
+
+SFX stubs: pickup blip, hit tick, level-up chime (even silent/no-op functions for now).
+
+Visual hits: enemy tint-on-hit (already), player hurt flash, tiny screen shake on big hit.
+
+E) HUD polish (primitive but readable)
+
+Top-left: HP bar, Level + XP bar.
+
+Top-right: Timer.
+
+Bottom-left: Kills, Enemies alive.
+
+Bottom-right: FPS (debug), Projectiles / Enemies / Orbs counts.
+
+F) Performance guardrails
+
+One reusable Graphics for all debug overlays (clear() per frame).
+
+SpatialGrid verified for: projectile queries, magnet orbs, and enemy proximity.
+
+Pools: enemies, projectiles, AOEs, orbitals, XP orbs (no destroy() in hot paths).
+
+Frame budget sanity: cap spawns per tick; early-out collision queries.
+
+G) Build & debug quality-of-life
+
+Global debug toggles: F1 colliders, F2 collision sweeps, F3 camera boxes, F4 enemy info, F5–F8 weapon/aoe/orbit debug.
+
+Hot reload-ish path: keep constants in one module; recompile = quick test.
+
+Cheats: B burst enemies, P fire volley, K kill-all, L force level-up.
+
+H) Title → game → results loop (stubs)
+
+Title screen: “Start Run” → loads GameScene with seed.
+
+Results screen: time survived, level reached, kills; “Restart” (new seed) / “Title”.
+
+Save nothing yet (meta/progression later).
+
+Suggested “finish line” order (2–4 focused sessions)
+
+Run flow: timer, HP/damage UI, death → results stub.
+
+Level-ups: auto-apply a tiny random buff; HUD line for last upgrade.
+
+HUD polish + debug toggles consolidated.
+
+Performance pass: verify 60 FPS with ~300 enemies & lots of projectiles.
+
+Title/results stubs + restart loop.
+
+Acceptance criteria for “basic prototype”
+
+Start at Title, press Start → in-game with seed shown.
+
+Move, shoot, kill; enemies spawn continuously at edges.
+
+Take damage on contact; die → Results screen with time/kills; Restart works.
+
+Level-ups occur and visibly change something (damage/speed/cooldown).
+
+Stable 60 FPS under stress (on your dev machine).
+
+Debug overlays make it obvious what’s happening.

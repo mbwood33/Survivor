@@ -1,0 +1,20 @@
+MOVE:
+	WASD, Arrows, Gamepad left stick supported (deadzone 0.2)
+
+Tuning:
+	[ or 1 (down)		] or 2 (up)		max speed
+	; or 3 (down)		' or 4 (up)		accel
+	, or 5 (down)		. or 5 (up)		friction
+	- or 7 (down)		/ or 8 (up)		input smoothing K
+
+Debug
+	F1	culling rect
+	F2	collision AABBs
+	F5	projectile outlines
+	F6	XP radii
+
+Spawns/Tests
+	B	burst 30 enemies
+	P	test volley
+
+Camera follows player with smooth lerp; world-bounds clamped

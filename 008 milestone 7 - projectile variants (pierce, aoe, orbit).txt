@@ -1,0 +1,239 @@
+✅ MILESTONE 7 — PROJECTILE VARIANTS (PIERCE / AOE / ORBIT)
+
+Goal:
+Add three projectile behaviors with shared plumbing: Pierce (pass through N enemies), AOE (explode or linger), and Orbitals (weapons that spin around the player and deal contact damage on tick). Make the system data-driven and pooled.
+
+1) Data Model (Common Weapon + Projectile Schema)
+
+ Extend weapon data to include:
+
+{
+  id: 'basic',
+  behavior: 'straight' | 'pierce' | 'aoe' | 'orbit',
+  damage: 2,
+  amount: 1,                // shots or orbitals count
+  speed: 520,               // straight/pierce
+  cooldown: 0.35,
+  lifetime: 1.4,            // straight/pierce
+  area: 1.0,                // scales size/aoe radius
+  duration: 0.8,            // aoe linger / orbit lifetime
+  tickRate: 0.2,            // aoe/orbit damage cadence
+  pierceCount: 0,           // for 'pierce'
+  radius: 8,                // projectile or aoe radius base
+  orbit: {                  // for 'orbit'
+    distance: 64,           // from player, scaled by area
+    angularSpeed: 2.5,      // radians/sec
+    startAngleOffset: 0     // per-orbital phase offset
+  }
+}
+
+
+ Store per-shot scaled values at fire time (after passives/stat lanes, if any).
+
+2) Behavior Plumbing (Strategy Flag)
+
+ Add behavior to projectile instance: 'straight'|'pierce'|'aoe'|'orbit'.
+
+ Update the ProjectilePool to support 3 creation methods:
+
+spawnStraight(config)
+
+spawnPierce(config) (inherits straight with pierceLeft)
+
+spawnAOE(config) (stationary/linger field or explode-on-hit)
+
+spawnOrbit(config) (parent = player)
+
+ Use a switch per tick or function pointer: p.update = updatePierce | updateAOE | updateOrbit.
+
+3) PIERCE Variant
+
+ Projectile fields:
+
+pierceLeft: number
+
+hitSet?: Set<number> (optional) to avoid double-hitting the same enemy in the same frame
+
+ Collision:
+
+On enemy hit:
+
+Apply damage
+
+Decrement pierceLeft--
+
+If pierceLeft < 0 → despawn
+
+Else keep flying (no despawn)
+
+Clear hitSet each fixed step (or after collision loop)
+
+ Balancing knobs:
+
+Slightly lower base damage vs non-pierce to compensate OR keep equal for now.
+
+Keep lifetime same as straight; pierce doesn’t extend life.
+
+4) AOE Variant
+
+ Two modes (pick one now, add the other later):
+
+Explode-on-hit:
+
+Straight projectile flies; on first enemy hit, despawn projectile and spawn an AOE field at impact point.
+
+Fire-and-place (no travel):
+
+Spawn AOE at player (or targeted position) immediately for duration.
+
+ AOE fields (pooled):
+
+Fields: { pos, radius, duration, tickRate, tickTimer, damage, alive, sprite }
+
+Visual: filled circle (e.g., 0x4cc9f0) with alpha 0.3 and thin outline.
+
+ Damage ticking:
+
+Each tickRate seconds, query enemies within radius and apply damage once per tick.
+
+Optional per-enemy tick gate: track lastTickId to avoid double hits in same tick if multiple AOEs overlap.
+
+ Cleanup:
+
+duration -= dt; if <= 0 → despawn AOE.
+
+5) ORBIT Variant
+
+ Orbitals (pooled):
+
+Fields: { angle, angularSpeed, distance, damage, radius, duration, tickRate, tickTimer, ownerRef, sprite }
+
+Spawn N orbitals at equal phase: startAngleOffset = (2π/N)*i
+
+ Update:
+
+angle += angularSpeed * dt
+
+pos = player.pos + (cos(angle), sin(angle)) * distance
+
+duration -= dt; despawn when over
+
+ Damage ticking (contact):
+
+Every tickRate, query enemies within radius and apply damage (no knockback for now).
+
+ Area scaling:
+
+Scale distance and radius by weapon area multiplier.
+
+6) Shared Collision & Queries
+
+ Reuse SpatialGrid for candidate enemies:
+
+Pierce/Straight: AABB of projectile line segment approximated by circle AABB (center±radius).
+
+AOE/Orbit: circular range; compute AABB and query, then circle vs circle narrowphase.
+
+ Early outs:
+
+If no candidates, skip narrowphase.
+
+Reuse temp arrays to avoid allocations.
+
+7) Rendering & Feedback
+
+ Colors (placeholders):
+
+Straight: 0x3182ce
+
+Pierce: 0x1d4ed8 (darker)
+
+AOE: fill 0x4cc9f0, outline 0xffffff alpha 0.6
+
+Orbit: 0xf43f5e (salmon/pink)
+
+ Hit feedback:
+
+Enemy tint for 80 ms on damage (already added in prior milestone).
+
+Tiny screen micro-shake on AOE explosion (e.g., cam.shake(80, 0.002)).
+
+ Optional: scale projectile sprite by area (cap at max to avoid huge rects).
+
+8) Stat Lanes (if started)
+
+ Define modifiers that affect variants consistently:
+
+amount → more projectiles or more orbitals
+
+area → projectile radius / AOE radius / orbit distance
+
+duration → AOE linger / orbit lifetime
+
+cooldown → fire cadence
+
+speed → straight/pierce velocity
+
+damage → base damage multiplier
+
+ Apply modifiers once at spawn time; store resolved values on the instance.
+
+9) Controls & Testing Hooks
+
+ Hotkeys:
+
+1 → equip straight weapon
+
+2 → equip pierce weapon
+
+3 → equip AOE weapon (explode-on-hit mode)
+
+4 → equip orbit weapon
+
+ Debug toggles:
+
+F7 → draw projectile/aoe/orbit AABBs & radii
+
+F8 → show per-frame collision counts
+
+ Spawn helpers:
+
+P → fire a volley now (bypass cooldown)
+
+O → spawn orbitals now (replacing any active ones)
+
+B → burst enemies for stress test
+
+10) Performance Hygiene
+
+ Keep separate pools for: straight/pierce projectiles, AOE fields, orbitals.
+
+ Avoid per-tick new Set(); reuse a small ring buffer for hitSet if needed, or clear a shared boolean flag on enemies per frame (hitFrameId).
+
+ Limit per-tick: max spawns and max collision checks (short-circuit after first hit for non-pierce).
+
+ Batch debug graphics: single Graphics cleared per frame.
+
+11) Acceptance Checklist
+
+ Pierce: passes through up to pierceCount enemies, damaging each once per frame; despawns afterward or on lifetime end.
+
+ AOE: creates a field that damages all enemies in radius on ticks until duration ends; explode-on-hit path triggers reliably.
+
+ Orbit: N orbitals rotate around player, deal periodic contact damage; spacing/phasing correct.
+
+ All variants respect area/duration/speed/cooldown modifiers.
+
+ Debug overlay clearly shows shapes; FPS remains stable with 300–600 active projectiles/fields/orbitals during stress tests.
+
+12) Hooks for Next Milestones
+
+ Add Chain (bounce to nearest N enemies with decay).
+
+ Add Boomerang (returns to player after max distance).
+
+ Add On-Hit Status (burn/freeze/shock) with timers.
+
+ Add Evolutions (e.g., straight + passive X → pierce; orbit + passive Y → double ring).
+
+ Integrate with Level-Up Draft UI: variants become selectable upgrades with rarity.

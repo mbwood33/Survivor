@@ -1,0 +1,155 @@
+✅ MILESTONE 3 — SOLID TERRAIN COLLISIONS (AXIS-SEPARATED)
+
+Goal:
+Player (blue square) cannot pass through solid obstacles (trees/rocks). Use AABB colliders + axis-separated resolution with the SpatialGrid for broadphase.
+
+1) Collider Shapes & Player AABB
+
+ Give player an AABB collider sized to the visual (e.g., 24×24) with offset if needed:
+player.collider = { w: 24, h: 24, ox: -12, oy: -12 }
+
+ Keep obstacle colliders as AABBs: { x,y,w,h } (trees still drawn as triangles, but collide as AABB).
+
+ Write helpers:
+
+getAabbAt(pos, collider) → { x, y, w, h }
+
+intersects(a, b) → boolean
+
+overlapX(a, b) / overlapY(a, b) → signed penetration on each axis
+
+2) Broadphase Query via SpatialGrid
+
+ Before resolving, compute proposed motion: dx = vel.x * dt, dy = vel.y * dt.
+
+ Build expanded AABB around the player to cover the sweep:
+
+sweep.x = min(curr.x, curr.x + dx)
+sweep.y = min(curr.y, curr.y + dy)
+sweep.w = player.w + abs(dx)
+sweep.h = player.h + abs(dy)
+
+
+ candidates = grid.query(sweep) to fetch only nearby obstacles.
+(Re-use a temp array to avoid GC.)
+
+3) Axis-Separated Movement & Resolution
+
+ X step:
+
+Move pos.x += dx.
+
+Recompute playerAabbX = getAabbAt(pos, collider).
+
+For each obstacle in candidates that intersects playerAabbX:
+
+Compute signed penetration on X (mtvX).
+
+Resolve: pos.x += mtvX, then vel.x = 0.
+
+(Iterate over all overlaps; stop early if none remain.)
+
+ Y step:
+
+Move pos.y += dy.
+
+Recompute playerAabbY.
+
+Resolve all overlaps on Y (as above), then vel.y = 0 when resolving.
+
+ Use a small epsilon (e.g., 1e-6) to avoid “sticky” re-collisions after resolution.
+
+4) Penetration Calculation (AABB vs AABB)
+
+ For two AABBs A (player) and B (obstacle):
+
+dx1 = (B.x + B.w) - A.x     // A penetrated from left
+dx2 = (A.x + A.w) - B.x     // A penetrated from right
+mtvX = (dx1 < dx2 ? -dx1 : +dx2)
+
+
+ For Y:
+
+dy1 = (B.y + B.h) - A.y     // from top
+dy2 = (A.y + A.h) - B.y     // from bottom
+mtvY = (dy1 < dy2 ? -dy1 : +dy2)
+
+
+ When resolving the X pass, only apply mtvX; for Y pass, only mtvY.
+(Axis separation prevents corner tunneling and is stable.)
+
+5) Corner & Stairs Guardrails
+
+ After each axis, re-check overlaps; loop up to N=4 times max per axis to resolve chains (rare).
+
+ If both |mtvX| and |mtvY| are tiny (< epsilon), bail to avoid oscillation.
+
+ Optional step-up micro offset (later): if blocked on X but there’s small clearance above/below, nudge Y by ≤ 4 px to simulate stepping—skip for now.
+
+6) Velocity Zeroing & “Stickiness”
+
+ On collision along an axis, zero that axis’ velocity (vel.x=0 or vel.y=0).
+
+ After resolution, nudge the player out by sign(mtv) * 0.001 to prevent immediate re-hit next frame.
+
+7) Integration Order (Replace old integrate)
+
+ In your fixed-step player.step():
+
+Compute dx, dy from current vel.
+
+Do broadphase query once using the sweep AABB.
+
+Resolve X, then Resolve Y, as described.
+
+Update the render rectangle setPosition(pos.x, pos.y).
+
+8) World-Bounds Clamp (Temporary)
+
+ After resolution, clamp player within world:
+pos.x = clamp(pos.x, 0, WORLD.width)
+pos.y = clamp(pos.y, 0, WORLD.height)
+
+ If clamped, set the corresponding vel component to 0.
+
+9) Debug Tools
+
+ Toggle (F2) collision debug:
+
+Draw player AABB outline (cyan).
+
+Draw obstacle AABBs for currently queried candidates (orange).
+
+Draw sweep AABB (magenta, translucent).
+
+ Stats line: candidate count, collisions resolved this frame.
+
+10) Performance Hygiene
+
+ Reuse arrays for candidates and overlaps.
+
+ Avoid creating new Graphics every frame—keep one debug graphics and clear() each frame.
+
+ Keep grid cellSize ≈ 128 (2–3× typical collider size).
+
+ Early-out checks: if dx===0, skip X pass; if dy===0, skip Y pass.
+
+11) Acceptance Checklist
+
+ Player never passes through rocks/trees at any approach angle/speed.
+
+ Sliding along walls feels smooth; no jitter at corners.
+
+ Sprinting diagonally into a corner stops on both axes without vibrating.
+
+ With 2k obstacles, frame time remains stable (60 FPS target).
+
+ Debug overlay clearly shows sweep, candidates, and final resolved AABB.
+
+12) Hooks for Future Extensions
+
+ Replace tree AABBs with triangle/polygon colliders + SAT later (keep broadphase AABB).
+
+ Add one-way or sensor colliders by tagging obstacles and skipping resolution.
+
+ Add knockback by setting vel before step; current resolver already handles it.

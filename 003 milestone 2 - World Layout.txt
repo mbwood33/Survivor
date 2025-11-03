@@ -1,0 +1,140 @@
+✅ MILESTONE 2 — WORLD LAYOUT (BIG MAP WITH PLACEHOLDER TERRAIN)
+
+Goal:
+Create a large scrollable world (e.g., 8000×8000) populated with simple solid terrain placeholders (green triangles = trees, gray rectangles = rocks/walls). Render only what’s near the camera (basic culling) and prep for collisions in the next milestone.
+
+1) World Constants & Scene Setup
+
+ Add WORLD = { width: 8000, height: 8000 } to config.
+
+ In GameScene.create(), set camera/world bounds:
+this.cameras.main.setBounds(0, 0, WORLD.width, WORLD.height)
+
+ Keep background clear color (e.g., dark gray) to differentiate void.
+
+2) Layers / Display Lists
+
+ Create three display layers or containers:
+
+bgLayer (floor/grid)
+
+obstacleLayer (trees/rocks)
+
+entityLayer (player)
+
+ Ensure the player’s rectangle is added to entityLayer.
+
+3) Background (Optional but Helpful)
+
+ Draw a subtle ground tile/grid using a single Graphics baked to a texture and repeated sprites, or skip and just set a flat background color.
+
+ Keep it lightweight; avoid per-frame redraws.
+
+4) Obstacle Data Model
+
+ Define a simple Obstacle type:
+
+{ id:number, kind:'tree'|'rock', x:number, y:number, w:number, h:number, aabb:{x:number,y:number,w:number,h:number} }
+
+
+ Trees: represent as triangles visually but store AABB for now (accurate triangle collision can come later).
+
+ Rocks/Walls: rectangles (use AABB directly).
+
+5) Spatial Grid (Broadphase Prep)
+
+ Implement a basic SpatialGrid utility:
+
+Constructor: cellSize = 128
+
+Methods: insert(obj, aabb), update(obj, newAabb), query(aabb):Obstacle[], clear()
+
+ Cell key = cx+","+cy where cx = (x / cellSize)|0.
+
+ Insert each obstacle’s AABB into the grid on spawn.
+
+6) Procedural Placement (Temp Content)
+
+ Seed RNG (optional) for reproducible layouts.
+
+ Generate e.g., 1500–2500 obstacles:
+
+60% trees (green triangles; draw as is but collide as AABB)
+
+40% rocks/walls (gray rectangles)
+
+Sizes: trees ~48–64 px base; rocks ~64×32, 96×48, etc.
+
+ Avoid overlapping placements: simple retry loop (cap attempts per obstacle).
+
+7) Drawing Obstacles (Phaser Graphics → Static GameObjects)
+
+ For trees:
+
+Use Graphics to draw a filled triangle; convert to texture via generateTexture, then create an Image for each instance (or reuse a few textures to avoid atlas bloat).
+
+Tint = green (0x2f9e44).
+
+ For rocks/walls:
+
+Use this.add.rectangle(x,y,w,h, 0x6c757d) with origin 0.5.
+
+Alternatively, pre-bake a texture like trees (fewer objects = better).
+
+ Store a reference to each display object in the obstacle record for visibility toggles.
+
+8) Camera-Scope Culling (Simple)
+
+ Each update() frame: compute camera view AABB with small padding (e.g., +128 px).
+
+ For obstacles:
+
+If obstacle AABB intersects view → setVisible(true) (and active=true if used)
+
+Else → setVisible(false)
+
+ Optimize:
+
+Query the SpatialGrid with the view AABB to get candidates.
+
+Only toggle visibility for candidates + previously visible set.
+
+9) Player & Camera Integration
+
+ Ensure player stays within world bounds (temporary clamp):
+player.pos.x = clamp(player.pos.x, 0, WORLD.width)
+player.pos.y = clamp(player.pos.y, 0, WORLD.height)
+
+ Camera already follows player from Milestone 1; nothing else needed yet.
+
+10) Debug Overlay
+
+ Add toggle (F1) to draw:
+
+Camera view rect (thin outline)
+
+Spatial grid cell lines (optional)
+
+AABB boxes for visible obstacles (semi-transparent)
+
+ Add stats text: visible obstacles count / total obstacles.
+
+11) Acceptance Checklist
+
+ World size ≥ 8000×8000; camera can pan across with the player.
+
+ 1500–2500 obstacles appear scattered and render only when near the camera.
+
+ Stable 60 FPS on typical hardware (no per-frame massive allocations).
+
+ Debug overlay correctly shows culling and (optionally) grid cells.
+
+ Player never leaves world bounds (temporary clamp OK for now).
+
+12) Notes / Prep for Next Milestone (Collisions)
+
+ Keep each obstacle’s AABB ready for collision queries.
+
+ SpatialGrid’s query(aabb) will be used by move-and-collide next.
+
+ Trees remain triangle visuals but AABB colliders until SAT is implemented later.

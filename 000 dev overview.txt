@@ -1,0 +1,211 @@
+1) Core Game Loop & Runtime
+
+Fixed timestep update (e.g., 60 Hz simulation, render interpolated) to keep collisions/DPS consistent.
+
+State machine for Boot → Main Menu → Run (Playing / Paused / LevelUpDraft) → Results → Meta.
+
+Entity lifecycle (spawn, enable/disable, destroy) with object pooling for projectiles, enemies, damage numbers.
+
+Global services singletons: RNG, Time, Audio, Save/Meta, Config, Content Loader.
+
+2) World & Camera
+
+Arena controller: infinite-feel plane with tiled/parallax background; soft “pull” toward center or dynamic spawn ring.
+
+Camera: follow player with dead-zone; optional screen shake & vignette.
+
+Spatial partitioning: grid buckets or quadtree for nearby queries (projectiles ↔ enemies, magnet XP orbs).
+
+3) Player Control & Feel
+
+Input: WASD/left stick move; aimless auto-fire (classic) or optional “aim bias”.
+
+Movement & physics: acceleration, friction, clamp speed; knockback.
+
+Hitbox/hurtbox layers** with collision filtering (player, enemy, projectile, pickup).
+
+Feel polish: coyote-ish smoothing, micro-camera lag, speed lines at high velocity.
+
+4) Combat Systems
+
+Damage model: base damage, crit chance/multiplier, on-hit effects, DoT ticks, armor/pierce.
+
+Projectiles framework: behaviors (straight, boomerang, spiral/orbit, burst, chain, pierce, explode).
+
+Area effects: circles, cones, rectangles with tick cadence and lifetime.
+
+Knockback & stun: impulse + decay; status flags with timers (freeze, burn, shock).
+
+5) Enemies & AI
+
+Enemy archetypes: shambler, sprinter, tank, orbiter, charger, summoner, turret.
+
+Steering: seek player (no pathfinding needed), avoidance via simple separation force in local cell.
+
+Wave/squad spawner: time-segmented script + weighted tables; boss gates/miniboss injectors.
+
+Scaling: per-minute HP/damage multipliers; difficulty curves per stage.
+
+6) Progression Inside a Run (Roguelite Layer)
+
+XP drops & magnet: pickups with gravity to player when within radius or via “Attractor” stat.
+
+Level-up draft: N-choice card picker, rarity weights, duplicates upgrade tier (e.g., I→V).
+
+Stats framework: additive vs multiplicative lanes (move speed, proj speed, cooldown, area, amount, duration, luck).
+
+Synergies/evolutions: recipe rules that transform weapons at thresholds (Weapon A + Passive B ≥ tier → Evo).
+
+Gold & meta currency: gold for shop during run (rerolls, heals) vs meta coins for out-of-run upgrades.
+
+7) Meta-Progression (Out of Run)
+
+Permanent upgrades: trees for survivability, growth, magnet, luck; cap & cost curves.
+
+Unlocks: characters, weapons, stages via achievements (survive X min, kill boss, collect N coins).
+
+Run history: seed, build, timeline, DPS breakdown, achievements.
+
+8) Balancing & Data
+
+Data-driven content (JSON/TS objects): enemies, waves, weapons, passives, characters, stages.
+
+RNG: seedable PRNG with streams (loot vs spawns) for reproducibility.
+
+Curves: HP/dmg scaling over time; drop rates; XP thresholds (e.g., quadratic early, softened late).
+
+Analytics hooks (optional): event counters for DPS contribution, pick rates, survival curves.
+
+9) UI & UX
+
+HUD: HP bar, XP bar, level, timer, gold, minimeter of enemy pressure.
+
+Draft UI: keyboard/controller friendly, rarity shine, compare deltas.
+
+Inventory/Build sheet: current weapons & passives with tier, concise tooltips.
+
+Pause menu: options, codex (unlocks/lore), quit → confirm.
+
+Results screen: run summary, unlock popups, meta earnings.
+
+10) Audio & Juice
+
+SFX buses: player, enemy, UI; ducking priorities.
+
+Procedural layers: pitch-randomized hits, crit stingers, pickup arpeggios.
+
+VFX: hit flash, palette shift at low HP, radial burst on level-up, boss intro stingers.
+
+Screen feedback: micro-shake per big hit; chromatic blip on crits.
+
+11) Performance & Tech Health
+
+Object pooling everywhere (projectiles, pickups, damage text).
+
+Batching: sprite atlases; avoid per-frame allocations.
+
+Broadphase first: grid cell queries before exact collisions.
+
+LOD: simplify far-off enemy updates (reduced frequency), “merge swarms” if counts explode.
+
+Deterministic math where feasible for testability.
+
+12) Content Pipeline & Tools
+
+Content hot-reload: reload JSON/TS data without restart.
+
+Wave editor (simple): CSV/JSON recipe you can tweak fast.
+
+Weapon sandbox: spawn dummy and print DPS; time-to-kill benchmarks.
+
+Build configs: staging vs release flags (debug overlays, profiler).
+
+13) Save/Load & Integrity
+
+Profiles with meta upgrades, unlock flags, settings; checksum/signature to prevent corruption.
+
+Runs: only meta is saved; in-run is volatile (unless you want mid-run resume).
+
+14) Accessibility & Options
+
+Color-blind palettes, hit-flash intensity sliders, reduced screen shake.
+
+Aim assist toggle, auto-pickup radius scaling, readable fonts at distance.
+
+Difficulty presets and custom mutators (enemy HP +20%, loot −10%, etc.).
+
+15) Platform & Packaging
+
+Desktop first; controller support.
+
+Mobile later: thumb joystick, simplified UI, particle budget switch.
+
+Web export: memory budget, asset compression, frame pacing considerations.
+
+Recommended Build Order (Vertical Slices)
+
+Minute-5 Prototype
+Player move → camera → enemy seek → basic weapon → HP & damage → XP & level-up → pause → results.
+
+Combat Deepening
+Projectiles variety, AOE, status effects, knockback, crits, pickups, gold.
+
+Waves & Bosses
+Wave script, miniboss/boss with telegraphs, arena events (rings, hazards).
+
+Draft & Synergies
+Rarity, rerolls, banish, evolutions, stat lanes.
+
+Meta & Unlocks
+Coins, permanent tree, characters with traits, stage select.
+
+Juice & Performance
+VFX/SFX polish, pooling everywhere, grid broadphase, profiling.
+
+Minimal Data Shapes (example)
+type Weapon = {
+  id: string;
+  baseDamage: number;
+  amount: number;           // projectiles per volley
+  cooldown: number;         // seconds
+  speed: number;
+  duration: number;         // seconds (for AOE/orbitals)
+  area: number;             // scalar on radius/size
+  pierce: number;
+  critChance: number;
+  critMult: number;
+  tags: string[];           // "projectile","aoe","orbit","chain"
+  evolutions?: { withPassiveId: string; intoWeaponId: string };
+  tierBonuses: Array<Partial<Weapon>>; // per upgrade
+};
+
+type Enemy = {
+  id: string;
+  hp: number;
+  damage: number;
+  speed: number;
+  weight: number;           // spawn weighting
+  xpDrop: number;
+  onDeath?: string[];       // "explode","split","spawnOrb"
+};
+
+type Wave = {
+  tStart: number;           // seconds from run start
+  tEnd: number;
+  entries: { enemyId: string; rate: number; ringRadius: number; }[];
+  modifiers?: { hpScale?: number; dmgScale?: number; };
+};
+
+Tech Stack Fit (for you)
+
+TypeScript + ExcaliburJS or Phaser (you already use these): great for data-driven content and web builds.
+
+ECS optional: if you go ECS, keep it light (Position/Velocity/Health/Hitbox/AI/Render/Weapon); otherwise, keep composition via behaviors/components.
+
+Testing & Tuning
+
+DPS lab: spawn dummy, run each weapon 10s with fixed seed, print mean/var DPS.
+
+Survival curve: simulate 10k runs (AI-driven) to estimate minute-to-death under curves.
+
+Pick-rate tracking: log choices to learn which cards are duds.

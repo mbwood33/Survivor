@@ -1,0 +1,14 @@
+For a Vampire Survivors-style game, you'll need concepts for weapons with base stats and evolutions, passive items that enhance weapons or provide new abilities, and power-ups like temporary buffs or currency. Key mechanics include leveling up to improve weapons and passive items, combining them to create evolved weapons, and managing a variety of upgrade options during gameplay, as outlined in Medium and Cubic Creativity.  
+Weapons and passive items
+Base weapons: Each weapon starts with its own set of stats (damage, area, speed, cooldown, etc.) and has a linear growth array for leveling up. 
+Passive items: These provide a variety of effects, such as increasing damage, speed, or adding other effects to weapons. Some can be combined with specific weapons to evolve them. 
+Evolved weapons: These are powerful, transformed versions of base weapons that require a specific passive item and the base weapon to be at a certain level (often level 8). 
+Power-ups
+Temporary buffs: These can be found during gameplay and provide short-term benefits like invincibility, increased movement speed, or attraction to pickups. 
+Currency: Gold and gems that are dropped by enemies, which are then used to purchase permanent upgrades or level up characters between runs. 
+Chance/Luck: Implement systems where player luck influences the types of upgrades offered. For example, higher luck could increase the chance of receiving a weapon you already own or a special reward chest. 
+Upgrade and leveling mechanics
+Leveling system: After gaining enough experience, the player is presented with a choice of upgrades, such as a new weapon, leveling up an existing weapon or passive item, or a power-up. 
+Combining items: The process of evolving a weapon is a core mechanic, rewarding players who invest in their loadout. 
+Item synergy: Design weapons and passive items that work well together, creating powerful build combinations. 
+Permanent unlocks: A progression system where players can unlock new characters, weapons, or power-ups for future runs, providing a sense of constant progress. 

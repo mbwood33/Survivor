@@ -1,0 +1,163 @@
+✅ MILESTONE 5 — BASIC ENEMIES, SPAWN MANAGER, CONTACT DAMAGE
+
+Goal:
+Introduce a simple enemy that seeks the player, spawns over time around the camera, gets culled off-screen, and deals contact damage (with brief i-frames). Include pooling for performance.
+
+1) Enemy Data & Types
+
+ Define Enemy type:
+
+{ id:number, kind:'shambler', pos:{x,y}, vel:{x,y},
+  speed:number, accel:number, hp:number, touchDmg:number,
+  radius:number, aabb:{w,h,ox,oy}, alive:boolean, sprite:Phaser.GameObjects.Rectangle }
+
+
+ Create a small archetype table (JSON/TS): shambler = { speed: 80, accel: 600, hp: 3, touchDmg: 5, radius: 14 }
+
+2) Object Pooling (Enemies)
+
+ Implement an EnemyPool with:
+
+spawn(kind, x, y) → returns Enemy (recycled or new)
+
+despawn(enemy) → hide sprite, set alive=false, return to pool
+
+Pre-create ~200 enemies at boot to avoid runtime spikes
+
+ Sprites: use Phaser.GameObjects.Rectangle (size ~ 28×28, color = 0xc53030)
+
+3) Spawn Manager (Timeline)
+
+ Create SpawnManager with:
+
+time accumulator (seconds)
+
+rules: array of entries { tStart, tEnd, ratePerSec, kind, ringRadiusMin, ringRadiusMax }
+
+update(dt) increments internal spawn budget and spawns enemies accordingly
+
+ Initial rule: 0–9999s, rate=0.8/s, kind='shambler', ring=700–1000 px
+
+ Spawn around the camera/player:
+
+Sample an angle θ, radius r in [min,max], world pos = player.pos + (cosθ, sinθ)*r
+
+Ensure pos is inside world bounds; if outside, re-sample (cap retries)
+
+Optional: avoid spawning inside solid obstacles by querying SpatialGrid; retry if intersecting
+
+4) Enemy Steering (Seek)
+
+ Each fixed step:
+
+Compute toPlayer = normalize(player.pos - enemy.pos)
+
+Accelerate: enemy.vel += toPlayer * enemy.accel * dt
+
+Clamp speed: |vel| ≤ enemy.speed
+
+Integrate: enemy.pos += enemy.vel * dt
+
+ Optional separation (later): add small avoidance from other enemies (skip for now)
+
+ Update sprite position to enemy.pos
+
+5) Enemy vs Terrain (for now)
+
+ Skip terrain collisions at this stage (enemies ghost through trees/rocks) — keep player-only solid terrain
+
+ (Later milestone): add enemy terrain collision if desired
+
+6) Contact Damage (Player Hurtbox)
+
+ Player combat fields:
+
+hpMax, hp, invulnTimer (seconds), invulnDuration=0.5s, knockback = 200
+
+ Each fixed step (after enemy integration):
+
+Build player AABB
+
+Query SpatialGrid or iterate visible enemies (start simple: iterate visible)
+
+If intersects(playerAabb, enemyCircleAabb) and invulnTimer<=0:
+
+player.hp -= enemy.touchDmg
+
+Set invulnTimer = invulnDuration
+
+Apply knockback: player.vel += normalize(player.pos - enemy.pos) * knockback
+
+Flash player sprite (tint) and/or brief screen shake
+
+ Tick down invulnTimer = max(0, invulnTimer - dt)
+
+7) Culling & Cleanup
+
+ Use camera worldView (+padding) to decide visibility
+
+ Off-camera enemies remain simulated (OK for now)
+
+Optional optimization: sleep enemies far from player (> 2000 px) and stop updating them
+
+ Despawn enemies that wander outside world bounds by a large margin (e.g., 512 px beyond)
+
+8) Death & Hit Feedback (Temp)
+
+ For now, enemies die only from a dev hotkey or future player weapon (coming later)
+
+ despawn(enemy) spawns a small puff:
+
+Reuse a Graphics-baked circle or rectangle, tween alpha → 0 (or skip for performance)
+
+ Add a quick tint pulse on contact damage to the player:
+
+player.gfx.setFillStyle(0x63b3ed) for 100 ms, then revert
+
+9) Debug & Stats
+
+ Toggle (F4) enemy debug:
+
+Draw enemy circles/AABBs (thin red), player AABB (cyan)
+
+Draw spawn ring (two concentric circles)
+
+ On-screen text:
+
+Current enemies: alive / pooled
+
+Spawn rate, minute timer
+
+Player HP and i-frames
+
+10) Performance Hygiene
+
+ Reuse temp arrays for overlap checks; avoid per-frame allocations
+
+ Limit spawn per tick to avoid bursts (e.g., clamp to ≤ 8 spawns per fixed step)
+
+ Keep pool capacity reasonably high (e.g., 400–800) for stress tests
+
+ Prefer toggling visible/active vs destroying sprites; avoid new in hot loops
+
+11) Acceptance Checklist
+
+ Enemies continuously spawn around the camera’s outskirts and move toward player
+
+ Player takes damage on touch, gains brief invulnerability, and gets knocked back
+
+ Camera view remains smooth; enemies appear just before entering the frame
+
+ Pooled enemies recycle cleanly; FPS stable with 200–400 active enemies
+
+ Debug overlays accurately show spawn ring and colliders
+
+12) Hooks for Next Steps
+
+ Add basic player weapon (auto-firing projectile) with pooling
+
+ Add XP orbs on enemy death + magnet pickup
+
+ Introduce wave scripting (miniboss at 60s, surge windows, archetype mixes)
+
+ Start stat system (move speed/cooldown/area/amount) to influence enemies/weapon

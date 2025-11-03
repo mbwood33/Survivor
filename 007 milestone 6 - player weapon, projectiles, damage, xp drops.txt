@@ -1,0 +1,226 @@
+✅ MILESTONE 6 — PLAYER WEAPON, PROJECTILES, DAMAGE, XP DROPS
+
+Goal:
+Give the player an auto-firing basic weapon (projectiles), handle projectile–enemy hits, enemy HP & death, spawn XP orbs that the player can pick up (with magnet radius), and display XP/level.
+
+1) Player Combat Fields
+
+ Add to Player:
+
+projDamage = 2
+
+projSpeed = 520
+
+projLifetime = 1.4 (seconds)
+
+fireCooldown = 0.35 (seconds)
+
+fireTimer = 0
+
+projectilesPerVolley = 1
+
+spreadDeg = 0 (set >0 later for multi-shot)
+
+critChance = 0 (0–1, optional)
+
+critMult = 2.0 (optional)
+
+ Add xp = 0, level = 1, xpForNext = 10 (use simple curve for now).
+
+2) Aim Model (Initial)
+
+ VS-style auto-fire: aim in 8-way toward nearest enemy within aimScanRadius (~900 px).
+
+Fall back to last aim direction or default right (1,0) if none found.
+
+ Optional: rotate aim slightly each volley when no target (so shots aren’t always to the right).
+
+3) Projectile Pool
+
+ Create ProjectilePool:
+
+Projectile fields: { pos, vel, life, damage, radius, alive, sprite }
+
+Visual: small rectangle or circle (~8–10 px, color 0x3182ce)
+
+Methods: spawn(x, y, dir, speed, damage, lifetime), despawn(p)
+
+Pre-allocate ~300 projectiles
+
+ Projectiles live in a fast array; use an index-based free list.
+
+4) Firing Logic
+
+ In fixed step:
+
+Decrement fireTimer -= dt
+
+If fireTimer <= 0:
+
+Set fireTimer += fireCooldown
+
+Compute aimDir (normalized)
+
+For n = projectilesPerVolley:
+
+Compute angle θ = baseAngle + spreadOffset(n) (if spread > 0)
+
+Convert to dir = (cos θ, sin θ)
+
+ProjectilePool.spawn(player.pos, dir, projSpeed, projDamage, projLifetime)
+
+ Optional fire effects: flash player rect briefly.
+
+5) Projectile Update & Culling
+
+ Each fixed step for active projectiles:
+
+p.pos += p.vel * dt
+
+p.life -= dt; if <=0 → despawn(p)
+
+If outside world bounds (with small margin) → despawn(p)
+
+Update sprite position
+
+ Use camera worldView (padded) to toggle projectile visibility; still simulate off-screen.
+
+6) Enemy HP & Damage Handling
+
+ Add to Enemy: hp (already) and onHitTintTimer (brief flash)
+
+ Collision:
+
+Build projectile AABB (or circle) and query visible enemies or SpatialGrid cell(s)
+
+On hit:
+
+Calculate damage (crit check if enabled)
+
+enemy.hp -= dmg
+
+Start onHitTintTimer = 0.08s
+
+Optionally apply small knockback to enemy: enemy.vel += awayFromHit * 80
+
+If projectile doesn’t pierce (for now, no pierce): despawn(projectile)
+
+ If enemy.hp <= 0 → call killEnemy(enemy).
+
+7) Enemy Death → XP Orbs
+
+ Add killEnemy(enemy):
+
+Despawn enemy to pool
+
+Spawn XP orb at enemy position
+
+(Optional: spawn small death puff VFX)
+
+ XP Orbs (pooled):
+
+Fields: { pos, vel, value, radius, alive, sprite }
+
+Visual: small circle ~8–10 px, color 0x38b000 (green)
+
+Value: 1–3 (simple); can scale with minutes later
+
+Start with slight random drift (vel) so they settle visually.
+
+8) XP Pickup & Magnet
+
+ Player fields:
+
+pickupRadius = 28 (always auto-pick within)
+
+magnetRadius = 160 (or 240; pulls orbs toward player)
+
+magnetPullSpeed = 420
+
+ Each fixed step:
+
+For orbs within magnetRadius, set velocity toward player with magnetPullSpeed
+
+If orb within pickupRadius, collect:
+
+player.xp += orb.value
+
+despawn(orb)
+
+Play pickup blip (later)
+
+ XP Curve:
+
+Simple: xpForNext = floor(10 + (level-1)*5 + (level-1)^1.2)
+
+If xp >= xpForNext:
+
+xp -= xpForNext
+
+level++
+
+Recompute xpForNext
+
+(Next milestones will open the level-up draft UI; for now just log)
+
+9) HUD (Temp)
+
+ Add simple on-screen:
+
+HP bar (optional for now), Level number, XP bar % (width based on xp/xpForNext)
+
+Show DPS-ish counters later; keep it minimal now
+
+10) Debug & Test Toggles
+
+ F5: Toggle projectile debug (draw projectile AABBs/circles)
+
+ F6: Toggle XP orb debug (draw magnet radius/pickup radius)
+
+ B: Burst-spawn 30 enemies around player (stress test)
+
+ P: Spawn 10 projectiles forward (test pool & hits)
+
+ Overlay stats: active projectiles / pooled, active orbs / pooled, kills
+
+11) Performance Hygiene
+
+ Reuse arrays for overlap/collision queries (avoid garbage)
+
+ Cap per-step spawns (e.g., ≤ 20 projectiles/tick)
+
+ Keep projectile and orb sprites simple (no per-frame generateTexture)
+
+ Broadphase:
+
+For collisions, prefer SpatialGrid query with projectile AABB
+
+Early out if no candidates
+
+ Avoid destroying display objects; toggle visible=false, active=false and pool
+
+12) Acceptance Checklist
+
+ Player fires automatically on cadence; aim picks nearest enemy if present
+
+ Projectiles move, expire, and hit enemies reliably (no tunneling at typical speeds)
+
+ Enemies lose HP and die; XP orbs spawn at death sites
+
+ Orbs magnetize toward player and collect inside pickup radius
+
+ XP/Level increments correctly; UI reflects XP progress
+
+ With 200–400 active enemies and frequent firing, FPS remains stable
+
+13) Hooks for Next Milestones
+
+ Add weapon stats/tiers (cooldown, amount, speed, duration, area, crit)
+
+ Add pierce/bounce/chain projectile variants
+
+ Implement Level-Up Draft UI (choose 1 of N upgrades)
+
+ Add damage popups and better feedback (hit flash, sound, screen micro-shake)
+
+ Start data-driven content (JSON/TS tables for weapons, orbs, and XP curves)

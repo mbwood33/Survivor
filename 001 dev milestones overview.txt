@@ -1,0 +1,282 @@
+Big-Picture Goals
+
+1. Player (blue square) moves with smooth feel.
+
+2. Large world (scrolling) with solid terrain (green triangles “trees”, gray rectangles “rocks”).
+
+3. Camera follows player with optional dead-zone and soft edges.
+
+4. Efficient collision + culling so big maps stay fast.
+
+5. Debug tools to see colliders and camera bounds.
+
+Milestone 0 — Project Skeleton
+
+Tech choice: TS + Vite (or Next) + Phaser 3 or ExcaliburJS.
+
+Folders
+
+src/
+  core/       // config, math utils, pooling, spatial grid
+  world/      // map generation + loading
+  entities/   // Player, Obstacle
+  systems/    // movement, collisions, camera, culling
+  ui/         // debug overlays
+  main.ts
+assets/       // (empty for now; we’ll render primitives)
+
+
+Config (src/core/config.ts)
+
+export const GAME = { width: 1280, height: 720, fixedDt: 1/60 };
+export const WORLD = { width: 8000, height: 8000, cell: 128 };
+export const PLAYER = { speed: 220, size: 24, accel: 2000, friction: 1800 };
+export const CAMERA = { deadZone: { w: 320, h: 180 }, lerp: 0.08, boundsPadding: 32 };
+
+Milestone 1 — Input & Movement (no camera yet)
+
+Goal: Move a blue square on a static screen, no collisions.
+
+Tasks
+
+Input mapping: WASD/ArrowLeft/Right/Up/Down; optional gamepad stick.
+
+Velocity model: acceleration → velocity; apply friction when no input.
+
+Clamp speed to PLAYER.speed.
+
+Data (entity component flavor)
+type Vec2 = { x:number; y:number };
+type Transform = { pos:Vec2; rot:number };
+type Kinematics = { vel:Vec2; accel:Vec2; maxSpeed:number };
+type Collider = { aabb:{ w:number; h:number }; isSolid:boolean };
+type Player = Transform & Kinematics & Collider;
+
+Feel notes
+
+Use fixed timestep for simulation (60 Hz).
+
+Apply acceleration along input axes; if |vel|>max, scale down.
+
+Friction: vel = moveTowards(vel, 0, friction*dt) when no input.
+
+Phaser: use scene.input.keyboard.addKeys(...) and set player.body.setAllowGravity(false); if using Arcade physics.
+Excalibur: set collisionType: Passive for player initially; update vel each tick.
+
+Milestone 2 — World Layout (big map)
+
+Goal: A very large coordinate space with placeholder terrain.
+
+Option A: Tilemap (easier authoring, built-in collisions)
+
+Create a sparse tilemap (e.g., 64×64 tiles of 128px = 8192 px wide/high).
+
+One layer is solid tiles (trees/rocks cells).
+
+Advantages: editor-friendly (Tiled), automatic broadphase.
+
+Option B: Object Field (fast to prototype)
+
+Generate N obstacles with simple geometry:
+
+Triangles (trees): equilateral ~ 48–64 px
+
+Rectangles (rocks/walls): 64×32, etc.
+
+Store in grid buckets for culling & collision.
+
+// src/core/spatialGrid.ts
+class SpatialGrid<T> {
+  constructor(public cellSize:number) {}
+  // set(obj, aabb), query(aabb):T[], update(obj)
+}
+
+
+Insert each obstacle’s AABB into the grid based on (x/cellSize|0, y/cellSize|0).
+
+Recommendation: Start with Object Field + Spatial Grid; you can swap to tilemap later without changing other systems.
+
+Milestone 3 — Collisions with Solid Terrain
+
+Goal: The player cannot pass through solid shapes.
+
+Approach
+
+Use AABB vs AABB for rectangles, and AABB vs triangle via SAT or simplest: approximate triangles with AABBs first (fast), then upgrade to SAT later if you like pointy accuracy.
+
+Continuous movement: do swept AABB or axis-separated resolution to prevent tunneling.
+
+Axis-separated resolution (simple & solid)
+
+Compute intended motion dx, dy.
+
+Move on X, test overlaps vs grid-queried solids; if collide, push out along X and zero vel.x.
+
+Move on Y, repeat; zero vel.y on collision.
+
+Steps
+
+Build a CollisionSystem:
+
+function moveAndCollide(p: Player, dt: number, grid: SpatialGrid<Obstacle>) {
+  const dx = p.vel.x * dt, dy = p.vel.y * dt;
+  // 1) X-axis
+  p.pos.x += dx;
+  for (const solid of grid.query(expandedAabb(p.collider, p.pos))) {
+    const mtvX = overlapOnX(p, solid);
+    if (mtvX) { p.pos.x += mtvX; p.vel.x = 0; }
+  }
+  // 2) Y-axis
+  p.pos.y += dy;
+  for (const solid of grid.query(expandedAabb(p.collider, p.pos))) {
+    const mtvY = overlapOnY(p, solid);
+    if (mtvY) { p.pos.y += mtvY; p.vel.y = 0; }
+  }
+}
+
+
+Broadphase: use grid.query() with player’s expanded AABB to get only nearby solids.
+
+Phaser: Arcade physics can do tilemap-layer collisions out of the box. For object field, you can still use Arcade bodies and overlap/collide with immovable bodies.
+Excalibur: default collision system supports AABBs; triangles can be polygons—start with rectangles for speed.
+
+Milestone 4 — Camera Follow on a Large Map
+
+Goal: Camera tracks the player, doesn’t leave world bounds, optional dead-zone and smoothing.
+
+Features
+
+Dead-zone: camera doesn’t move until the player exits a central box.
+
+Lerp: smooth to target (prevents jitter), clamp to world bounds.
+
+Bounds padding so you never show void beyond world edges.
+
+Math
+
+Target (no dead-zone): target = player.pos - (viewSize/2).
+
+With dead-zone:
+
+If player.x < cam.x + DZ.minX → cam.x = player.x - DZ.minX
+
+If player.x > cam.x + DZ.maxX → cam.x = player.x - DZ.maxX
+
+Same for Y.
+
+Lerp: cam = cam + (target - cam) * CAMERA.lerp.
+
+Clamp:
+
+cam.x = clamp(cam.x, 0, WORLD.width  - viewW);
+cam.y = clamp(cam.y, 0, WORLD.height - viewH);
+
+
+Phaser: cameras.main.startFollow(player, false, lerpX, lerpY) + setDeadzone(w,h) + setBounds(0,0,worldW,worldH).
+Excalibur: use engine.currentScene.camera.strategy.lockToActor(player) and write a custom strategy to add dead-zone + lerp; clamp with camera.pos = camera.pos.clamp(...).
+
+Milestone 5 — Rendering Primitives & Layers
+
+Goal: Draw simple shapes in correct order, cull off-screen.
+
+Layering
+
+Background (grid lines / ground color).
+
+Obstacles (solids).
+
+Player.
+
+Debug overlay (colliders, camera box, dead-zone).
+
+Culling
+
+Compute camera view AABB each frame; only draw objects whose AABB intersects view (+ small margin).
+
+Phaser: you’ll likely use Graphics objects or simple images; set scrollFactor = 1 and their world positions; Phaser handles culling for tilemaps; for custom objects, do manual visibility set.
+Excalibur: entities can draw via Graphics.Composite or simple Graphics.Rect/Triangle; set z or use GraphicsLayers.
+
+Milestone 6 — Performance Safety Nets (for large worlds)
+
+Spatial grid for obstacles; grid size ~ 2–3× biggest collider (e.g., 128 px).
+
+Pooling for entities if you later spawn lots of objects (not crucial yet).
+
+Fixed timestep update + accumulator render.
+
+Avoid per-frame allocations inside tight loops (reuse arrays for grid.query).
+
+Milestone 7 — Debug & Tools
+
+Keybinds: F1 toggle collider wireframes; F2 show camera AABB + dead-zone; F3 show spatial grid cells queried last frame.
+
+Overlay text: player pos, vel, FPS, number of obstacles drawn/culled.
+
+Stretch: Terrain Shapes & Slope Handling
+
+Start with AABB solids (rectangles).
+
+If you want true triangles (trees) to be solid:
+
+Convert to convex polygon colliders.
+
+Use SAT (Separating Axis Theorem) for AABB vs tri or poly vs poly.
+
+Keep broadphase via AABB of each polygon.
+
+Acceptance Criteria Checklist
+
+ Player moves smoothly; speed caps correctly; friction feels good.
+
+ Player cannot pass through any solid obstacles at any angle/speed.
+
+ Camera follows with dead-zone and lerp; never shows beyond world bounds.
+
+ Large world (≥ 8000×8000) runs at 60 FPS with ≥ 2k obstacles on mid hardware.
+
+ Debug overlays toggle on/off; grid queries are visibly correct.
+
+ Code paths for broadphase → narrowphase → resolution are clean and unit-testable.
+
+Phaser Quick Hooks (if you choose Phaser)
+
+Physics: Arcade with immovable obstacle bodies; or roll your own resolution for learning purposes.
+
+Camera:
+
+this.cameras.main.setBounds(0,0,WORLD.width,WORLD.height)
+  .startFollow(player, false, CAMERA.lerp, CAMERA.lerp)
+  .setDeadzone(CAMERA.deadZone.w, CAMERA.deadZone.h);
+
+
+Tilemap path (alternative): this.make.tilemap(...), map.addTilesetImage(...), map.createLayer(...), layer.setCollisionByProperty({ solid:true }).
+
+Excalibur Quick Hooks (if you choose Excalibur)
+
+Use engine.currentScene.camera and a custom strategy:
+
+const followWithDeadZone = (player: Actor) => (target: Camera, _): Vector => {
+  // compute desired camera pos using dead-zone math, then lerp
+  return desiredPos;
+};
+camera.strategy.lockToActor(player);
+camera.strategy.limitCameraBounds(new BoundingBox(0,0,WORLD.width, WORLD.height));
+
+
+Collisions: start with CollisionType.Fixed for obstacles, Active or Passive for player; then implement custom axis-separated resolution if you want total control.
+
+Concrete Next Steps (1–2 hours)
+
+Scaffold TS + your engine of choice; paste the GAME/WORLD/PLAYER/CAMERA constants.
+
+Build Player with input → accel/vel → on-screen render (blue square).
+
+Implement SpatialGrid + spawn ~1500 obstacles (green triangles as AABBs initially).
+
+Add moveAndCollide() axis-separated collision.
+
+Add Camera follow with dead-zone + lerp + clamp.
+
+Add debug toggles (wireframes + grid queries).
+
+When you’re ready, tell me which engine you want to use (Phaser or Excalibur), and I’ll drop in a minimal, clean starter scene in TypeScript that compiles and shows: blue square walking an 8k map, green blockers, smooth camera with dead-zone, and debug overlays you can toggle.

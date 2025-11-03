@@ -1,0 +1,148 @@
+✅ MILESTONE 4 — CAMERA FOLLOW, DEAD-ZONE, SMOOTHING, & CULLING POLISH
+
+Goal:
+Camera tracks the player smoothly, stays inside world bounds, uses a dead-zone to reduce jitter, respects zoom, and tightens render/culling behavior. Adds helpful debug overlays.
+
+1) Camera Basics
+
+ Set world bounds once (already done, reconfirm):
+this.cameras.main.setBounds(0, 0, WORLD.width, WORLD.height)
+
+ Ensure pixel rounding to reduce sub-pixel jitter (optional):
+this.cameras.main.roundPixels = true
+
+ Keep a reference: const cam = this.cameras.main
+
+2) Follow Target & LERP
+
+ Follow the player’s display object (rectangle), not raw pos:
+cam.startFollow(player.gfx, false, 0.12, 0.12) // lerpX/lerpY ≈ 0.08–0.2
+
+ Expose tunables in scene for quick tweaks:
+
+CAMERA_LERP_X = 0.12, CAMERA_LERP_Y = 0.12
+
+Hotkeys to adjust (e.g., ALT + [ / ])
+
+3) Dead-Zone
+
+ Compute a dead-zone sized ~25–40% of the view:
+
+const dzW = Math.floor(cam.width * 0.35);
+const dzH = Math.floor(cam.height * 0.35);
+cam.setDeadzone(dzW, dzH);
+
+
+ Recompute dead-zone when resize or zoom changes.
+
+ Optionally offset dead-zone for UI (e.g., HUD on left) via cam.deadzone.x/y.
+
+4) Zoom & Bounds Safety
+
+ Set default zoom: cam.setZoom(1) (later: 0.75–1.25 for feel tests).
+
+ After any zoom change, reapply:
+
+world bounds (Phaser handles, just confirm)
+
+dead-zone (must be recomputed in screen pixels)
+
+ Add hotkeys:
+
+ALT+- → zoom *= 0.9
+
+ALT+= → zoom *= 1.1
+
+Clamp zoom to [0.5, 2.0]
+
+5) View AABB for Culling (Polish)
+
+ Replace any previous “view rect” code with camera world-space AABB:
+
+const view = new Phaser.Geom.Rectangle(
+  cam.worldView.x, cam.worldView.y, cam.worldView.width, cam.worldView.height
+);
+
+
+ Add padding (e.g., +128 px) to pre-show objects:
+Phaser.Geom.Rectangle.Inflate(view, 128, 128)
+
+ Use this padded rect for SpatialGrid queries → toggle obstacle visibility.
+
+6) Parallax / Background (Optional)
+
+ If you have background sprites, set scrollFactor:
+
+Far layer: setScrollFactor(0.9)
+
+Near layer: setScrollFactor(1.0) (default)
+
+ Keep particle/UI layers at setScrollFactor(0)
+
+7) Screen Shake & Emphasis (Hooks)
+
+ Add helper for big impacts (future bosses):
+
+cam.shake(120, 0.004) // duration(ms), intensity
+
+ Add cam.flash(120, 255,255,255) for level-ups (optional)
+
+8) Debug Overlay
+
+ Toggle (F3) a camera debug Graphics that draws:
+
+Camera worldView (thin white rect)
+
+Dead-zone (yellow rect inside the view)
+
+Current follow target dot/outline
+
+ Debug text (fixed to screen):
+
+cam.x/y (world), zoom, deadzone(w×h),
+view(w×h), lerpX/Y, visible obst. count
+
+
+ Re-use a single Graphics; call clear() each frame (no new allocations).
+
+9) Resize Handling
+
+ Listen for resize and update:
+
+cam.setViewport(0, 0, newW, newH) if using custom viewports
+
+recompute dead-zone based on new cam.width/height
+
+keep zoom constant (unless you use letterboxed fit logic)
+
+10) Performance Hygiene
+
+ Ensure culling uses SpatialGrid + cam.worldView padded rectangle (no full list scans).
+
+ Avoid per-frame generateTexture; pre-bake shapes once.
+
+ Avoid creating/destroying Graphics every frame (reuse).
+
+ Profile with 2k+ obstacles: verify steady 60 FPS.
+
+11) Acceptance Checklist
+
+ Camera follows player smoothly; no visible jitter.
+
+ Player can move freely while camera stays inside world bounds.
+
+ Dead-zone prevents micro camera motion for short player nudges.
+
+ Changing zoom preserves correct bounds and dead-zone behavior.
+
+ Culling uses padded view rect; obstacles appear just before entering frame.
+
+ Debug overlay accurately shows worldView and dead-zone.
+
+12) Hooks for Next Steps
+
+ Add minimap overlay (render to separate camera or texture).
+
+ Add camera clamps by stage sub-zones (boss arenas).
+
+ Add cinematic pans: temporarily disable follow, tween cam to target, then re-enable.

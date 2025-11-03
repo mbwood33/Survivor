@@ -1,0 +1,109 @@
+✅ PLAYER MOVEMENT SYSTEM — “Blue Square Moves Smoothly”
+
+Goal:
+Create a controllable blue square that moves smoothly around the screen using acceleration, friction, and clamped speed, with optional input smoothing and fixed-timestep updates.
+
+1️⃣ Setup
+
+ Create a new Phaser Scene file (e.g., GameScene.ts)
+
+ Add Phaser game configuration (width = 1280, height = 720, backgroundColor = #14171a)
+
+ Instantiate the scene inside main.ts
+
+ Create a PlayerController class in GameScene.ts
+
+2️⃣ Input Handling
+
+ Initialize keyboard input: WASD + Arrow keys
+
+ Initialize gamepad input: left stick (apply radial deadzone ≈ 0.2)
+
+ Convert all input sources into a direction vector (x, y)
+
+ Normalize diagonals so diagonal speed ≈ straight speed
+
+ Optionally smooth input using exponential decay:
+smoothedDir = lerp(previousDir, rawDir, alpha)
+
+3️⃣ Physics / Kinematics
+
+ Store pos, vel, and tunable parameters:
+
+maxSpeed = 220
+
+accel = 2000
+
+friction = 1800
+
+ When direction ≠ 0: vel += dir * accel * dt
+
+ When no input: reduce velocity by friction each tick
+vel = moveTowardZero(vel, friction * dt)
+
+ Clamp magnitude of velocity to maxSpeed
+
+ Integrate position: pos += vel * dt
+
+4️⃣ Rendering
+
+ Create a Phaser.GameObjects.Rectangle for the player (24×24, color = 0x2b6cb0)
+
+ Each frame, update rectangle position to match pos
+
+ Center origin (0.5, 0.5) for smoother camera follow later
+
+5️⃣ Fixed Timestep Loop
+
+ Use an accumulator in update() for a 1/60 s fixed step
+
+ Example:
+
+acc += delta / 1000;
+while (acc >= fixedDt) {
+    player.step(fixedDt, readDir);
+    acc -= fixedDt;
+}
+
+
+ Ensures identical movement regardless of FPS
+
+6️⃣ Debug / Tuning
+
+ Display text overlay with position, velocity, and FPS
+
+ Add tuning hotkeys:
+
+[ / ] → adjust maxSpeed
+
+; / ' → adjust accel
+
+, / . → adjust friction
+
+- / / → adjust smoothing K
+
+ Draw a faint motion trail behind player for visual feedback
+
+7️⃣ Camera (Prep for Later)
+
+ Add camera follow:
+this.cameras.main.startFollow(playerRect, false, 0.12, 0.12)
+
+ Set world bounds larger than screen (e.g., 8000×8000)
+this.cameras.main.setBounds(0,0,8000,8000)
+
+ Keep camera zoom = 1 for now
+
+8️⃣ Verify Behavior
+
+ Holding keys moves smoothly; releasing eases to a stop
+
+ Diagonal speed ≈ straight-line speed
+
+ Small stick movements below deadzone do nothing
+
+ Parameter tweaks hot-reload instantly
+
+ No frame-rate-dependent jitter
+
+(Next milestone: add terrain obstacles, collisions, and camera dead-zone logic.)
