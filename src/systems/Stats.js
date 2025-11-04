@@ -6,7 +6,7 @@ export function createDefaultStats() {
     attackSpeed: 0.0, // 0.25 => 25% faster (CD / 1.25)
     projectileSpeed: 1.0,
     projectileAmount: 0, // additive
-    area: 1.0,
+    projSize: 1.0, // projectile size multiplier
     duration: 1.0,
     pierce: 0,
     critChance: 0.0,
@@ -24,10 +24,9 @@ export function resolveShot(base, stats) {
     speed: base.speed * stats.projectileSpeed,
     lifetime: base.lifetime * stats.duration,
     amount: Math.max(1, (base.amount | 0) + (stats.projectileAmount | 0)),
-    area: base.area * stats.area,
+    size: (base.size || 1) * (stats.projSize || 1),
     pierce: (base.pierce || 0) + (stats.pierce || 0),
     critChance: (base.critChance || 0) + (stats.critChance || 0),
     critMult: stats.critMult || 2.0,
   };
 }
-

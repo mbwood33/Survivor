@@ -169,7 +169,7 @@ export class PlayerController {
       lifetime: this.baseProjLifetime,
       cooldown: this.baseFireCooldown,
       amount: this.baseProjectilesPerVolley,
-      area: 1.0,
+      size: 1.0,
       pierce: 0,
       critChance: 0.0,
     };
@@ -193,7 +193,7 @@ export class PlayerController {
     }
 
     const count = resolved.amount;
-    const radius = PROJECTILES.radius * resolved.area;
+    const radius = PROJECTILES.radius * resolved.size;
 
     if (target) {
       // Per-projectile targeting of nearest enemies
@@ -211,7 +211,7 @@ export class PlayerController {
           dir.y * resolved.speed,
           resolved.damage,
           resolved.lifetime,
-          { collidesTerrain: true, radius, critChance: resolved.critChance, critMult: resolved.critMult }
+          { collidesTerrain: true, radius, critChance: resolved.critChance, critMult: resolved.critMult, pierce: resolved.pierce }
         );
       }
     } else {
@@ -227,7 +227,7 @@ export class PlayerController {
           dir.y * resolved.speed,
           resolved.damage,
           resolved.lifetime,
-          { collidesTerrain: true, radius, critChance: resolved.critChance, critMult: resolved.critMult }
+          { collidesTerrain: true, radius, critChance: resolved.critChance, critMult: resolved.critMult, pierce: resolved.pierce }
         );
       }
       this.volleyPhase += 0.35;
@@ -252,4 +252,3 @@ export class PlayerController {
     this.hp = Math.max(0, this.hp - amount);
   }
 }
-

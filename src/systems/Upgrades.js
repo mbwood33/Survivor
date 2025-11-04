@@ -8,7 +8,7 @@ export const Upgrades = [
   { id:'atk1',  tier:'common',  text:'+15% Attack Speed', apply:s=>s.attackSpeed+=0.15, lanes:['attackSpeed'] },
   { id:'spd1',  tier:'common',  text:'+20% Projectile Speed', apply:s=>s.projectileSpeed*=1.20, lanes:['projectileSpeed'] },
   { id:'amt1',  tier:'common',  text:'+1 Projectile',     apply:s=>s.projectileAmount+=1, lanes:['projectileAmount'] },
-  { id:'area1', tier:'common',  text:'+15% Area',         apply:s=>s.area*=1.15, lanes:['area'] },
+  { id:'psz1',  tier:'common',  text:'+15% Projectile Size', apply:s=>s.projSize*=1.15, lanes:['projSize'] },
   { id:'dur1',  tier:'common',  text:'+15% Duration',     apply:s=>s.duration*=1.15, lanes:['duration'] },
   { id:'mag1',  tier:'common',  text:'+25% Magnet',       apply:s=>s.magnet*=1.25, lanes:['magnet'] },
   { id:'ms1',   tier:'common',  text:'+15% Move Speed',   apply:s=>s.moveSpeed*=1.15, lanes:['moveSpeed'] },
@@ -29,7 +29,7 @@ export const Upgrades = [
 ];
 
 export const UpgradeCaps = {
-  damage: 10, attackSpeed: 10, area: 10, duration: 10,
+  damage: 10, attackSpeed: 10, projSize: 10, duration: 10,
   projectileSpeed: 10, magnet: 8, projectileAmount: 9,
   pierce: 6, critChance: 8, moveSpeed: 8,
 };

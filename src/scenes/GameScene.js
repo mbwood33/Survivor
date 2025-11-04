@@ -62,6 +62,8 @@ export class GameScene extends Phaser.Scene {
 
     // Camera follow with slight lerp for smoothness
     this.cameras.main.startFollow(this.player.rect, false, 0.12, 0.12);
+    // Pixel-perfect camera movement
+    this.cameras.main.roundPixels = true;
 
     // Input setup
     this.cursors = this.input.keyboard.createCursorKeys();
@@ -318,9 +320,9 @@ export class GameScene extends Phaser.Scene {
     // Manual projectile volley for testing
     if (Phaser.Input.Keyboard.JustDown(this.keys.P)) {
       // Fire a test volley in the last aim direction using resolved stats (ignores cooldown)
-      const baseWeapon = { damage: this.player.baseProjDamage, speed: this.player.baseProjSpeed, lifetime: this.player.baseProjLifetime, cooldown: this.player.baseFireCooldown, amount: this.player.baseProjectilesPerVolley, area: 1.0, pierce: 0, critChance: 0 };
+      const baseWeapon = { damage: this.player.baseProjDamage, speed: this.player.baseProjSpeed, lifetime: this.player.baseProjLifetime, cooldown: this.player.baseFireCooldown, amount: this.player.baseProjectilesPerVolley, size: 1.0, pierce: 0, critChance: 0 };
       const resolved = resolveShot(baseWeapon, this.player.stats);
-      const radius = PROJECTILES.radius * resolved.area;
+      const radius = PROJECTILES.radius * resolved.size;
       const dir = this.player.lastAimDir.x || this.player.lastAimDir.y ? this.player.lastAimDir : { x: 1, y: 0 };
       for (let i = 0; i < resolved.amount; i++) {
         this.projectiles.spawn(
@@ -330,7 +332,7 @@ export class GameScene extends Phaser.Scene {
           dir.y * resolved.speed,
           resolved.damage,
           resolved.lifetime,
-          { collidesTerrain: true, radius, critChance: resolved.critChance, critMult: resolved.critMult }
+          { collidesTerrain: true, radius, critChance: resolved.critChance, critMult: resolved.critMult, pierce: resolved.pierce }
         );
       }
     }
@@ -372,29 +374,33 @@ export class GameScene extends Phaser.Scene {
   }
 
   _projectileEnemyCollisions() {
-    // Very simple O(N*M) narrowphase for demonstration; acceptable for small counts.
-    // For scale, integrate an enemy SpatialGrid and query per projectile.
+    // O(N*M) narrowphase; with pierce support and simple per-frame de-dupe.
     for (let id = 0; id < this.projectiles.alive.length; id++) {
       if (!this.projectiles.alive[id]) continue;
       const p = this.projectiles.pos[id];
       const r = this.projectiles.radius[id];
-      let hit = null;
+      let remaining = this.projectiles.hitsLeft ? this.projectiles.hitsLeft[id] : 1;
+      if (remaining <= 0) remaining = 1; // safety
+      const hitThisFrame = new Set();
       for (let i = 0; i < this.enemyPool.active.length; i++) {
+        if (!this.projectiles.alive[id]) break; // might despawn mid-loop
         const e = this.enemyPool.active[i];
-        if (!e.alive) continue;
+        if (!e.alive || hitThisFrame.has(e)) continue;
         const dx = e.pos.x - p.x, dy = e.pos.y - p.y;
         const rr = r + e.radius;
-        if (dx * dx + dy * dy <= rr * rr) { hit = e; break; }
-      }
-      if (hit) {
-        // Apply crit chance
-        let dmg = this.projectiles.damage[id];
-        const cc = this.projectiles.critChance[id] || 0;
-        const cm = this.projectiles.critMult[id] || 2;
-        if (Math.random() < cc) dmg *= cm;
-        const dead = hit.hit(dmg);
-        this.projectiles.despawn(id);
-        if (dead) this._killEnemy(hit);
+        if (dx * dx + dy * dy <= rr * rr) {
+          // Apply crit and damage
+          let dmg = this.projectiles.damage[id];
+          const cc = this.projectiles.critChance[id] || 0;
+          const cm = this.projectiles.critMult[id] || 2;
+          if (Math.random() < cc) dmg *= cm;
+          const dead = e.hit(dmg);
+          if (dead) this._killEnemy(e);
+          hitThisFrame.add(e);
+          remaining--;
+          if (this.projectiles.hitsLeft) this.projectiles.hitsLeft[id] = remaining;
+          if (remaining <= 0) { this.projectiles.despawn(id); break; }
+        }
       }
     }
   }

@@ -17,6 +17,7 @@ export class ProjectilePool {
     this.radius = new Float32Array(PROJECTILES.maxPool).fill(PROJECTILES.radius);
     this.alive = new Array(PROJECTILES.maxPool).fill(false);
     this.collidesTerrain = new Array(PROJECTILES.maxPool).fill(true);
+    this.hitsLeft = new Int16Array(PROJECTILES.maxPool); // total hits allowed (1 + pierce)
     this.critChance = new Float32Array(PROJECTILES.maxPool);
     this.critMult = new Float32Array(PROJECTILES.maxPool).fill(2);
     this.sprites = new Array(PROJECTILES.maxPool);
@@ -42,6 +43,8 @@ export class ProjectilePool {
     this.radius[id] = radius;
     this.critChance[id] = options.critChance || 0;
     this.critMult[id] = options.critMult || 2;
+    const pierce = options.pierce || 0;
+    this.hitsLeft[id] = 1 + Math.max(0, pierce|0);
     this.sprites[id].setPosition(x, y);
     if (typeof this.sprites[id].setRadius === 'function') this.sprites[id].setRadius(radius);
     this.sprites[id].setVisible(true);

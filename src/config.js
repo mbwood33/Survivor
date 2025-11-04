@@ -2,8 +2,9 @@
 // These values centralize tunable parameters used across systems.
 
 export const GAME = {
-  width: 1280,
-  height: 720,
+  // Virtual resolution (logical game size). Integer-scaled for crisp pixels.
+  width: 1024,
+  height: 576,
   backgroundColor: 0x14171a,
   fixedDt: 1 / 60, // 60 Hz fixed step for deterministic physics/movement
 };
@@ -77,4 +78,3 @@ export const XP_ORBS = {
   radius: 6,
   maxPool: 300,
 };
-
