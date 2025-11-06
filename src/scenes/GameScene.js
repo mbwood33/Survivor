@@ -151,7 +151,7 @@ export class GameScene extends Phaser.Scene {
     for (let i = 0; i < 2; i++) this.enemyPool.spawnAround(this.player.pos);
 
     // Debug text overlay for tuning readout
-    this.debugText = this.add.text(16, 56, "", { fontFamily: 'monospace', fontSize: 14, color: '#dddddd' })
+    this.debugText = this.add.text(8, 40, "", { fontFamily: 'monospace', fontSize: 10, color: '#dddddd' })
       .setScrollFactor(0)
       .setDepth(1000);
   }
@@ -685,7 +685,7 @@ export class GameScene extends Phaser.Scene {
       const y = Math.random() * WORLD.height;
       const s = this.add.rectangle(x, y, 20, 20, 0xff00ff).setOrigin(0.5).setDepth(3);
       s.rotation = Math.PI / 4; // diamond
-      const label = this.add.text(x, y - 22, 'E', { fontFamily:'monospace', fontSize: 12, color:'#ff99ff' }).setOrigin(0.5).setDepth(3);
+      const label = this.add.text(x, y - 18, 'E', { fontFamily:'monospace', fontSize: 10, color:'#ff99ff' }).setOrigin(0.5).setDepth(3);
       this.shrines.push({ x, y, sprite: s, label, radius: 36, active: true });
     }
   }

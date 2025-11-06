@@ -3,8 +3,8 @@
 
 export const GAME = {
   // Virtual resolution (logical game size). Integer-scaled for crisp pixels.
-  width: 1024,
-  height: 576,
+  width: 640,
+  height: 360,
   backgroundColor: 0x14171a,
   fixedDt: 1 / 60, // 60 Hz fixed step for deterministic physics/movement
 };

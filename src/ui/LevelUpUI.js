@@ -16,18 +16,19 @@ export class LevelUpUI {
     this.back = scene.add.rectangle(0, 0, width, height, 0x000000, 0.6).setOrigin(0, 0);
     this.container.add(this.back);
 
-    // Panel
-    const panelW = 760, panelH = 360;
+    // Panel (scaled down for smaller virtual resolutions like 640x360)
+    const panelW = Math.min(600, width - 40);
+    const panelH = Math.min(300, height - 40);
     const panel = scene.add.rectangle(width/2, height/2, panelW, panelH, 0x111418, 0.95).setStrokeStyle(2, 0xffffff, 0.15);
     this.container.add(panel);
 
-    const title = scene.add.text(width/2, height/2 - panelH/2 + 28, 'Level Up!', { fontFamily:'monospace', fontSize: 28, color:'#ffffff' }).setOrigin(0.5);
+    const title = scene.add.text(width/2, height/2 - panelH/2 + 22, 'Level Up!', { fontFamily:'monospace', fontSize: 20, color:'#ffffff' }).setOrigin(0.5);
     this.container.add(title);
 
     // Choice cards
     this.cards = [];
-    const gap = 20; const cardW = (panelW - gap*4) / 3; const cardH = 180;
-    const y = height/2 - 30;
+    const gap = 12; const cardW = (panelW - gap*4) / 3; const cardH = Math.min(140, panelH - 120);
+    const y = height/2 - 16;
     for (let i = 0; i < 3; i++) {
       const x = width/2 - panelW/2 + gap + (cardW + gap) * i + cardW/2;
       const c = this._makeCard(x, y, cardW, cardH, this.choices[i], i);
@@ -36,7 +37,7 @@ export class LevelUpUI {
     }
 
     // Reroll button / hint
-    this.rerollText = scene.add.text(width/2, height/2 + panelH/2 - 32, '', { fontFamily:'monospace', fontSize: 16, color:'#cccccc' }).setOrigin(0.5);
+    this.rerollText = scene.add.text(width/2, height/2 + panelH/2 - 20, '', { fontFamily:'monospace', fontSize: 12, color:'#cccccc' }).setOrigin(0.5);
     this.container.add(this.rerollText);
     this._refreshRerollText();
 
@@ -51,9 +52,9 @@ export class LevelUpUI {
     const color = upgrade ? (upgrade.tier === 'rare' ? 0x2f9e44 : upgrade.tier === 'uncommon' ? 0x4dabf7 : 0xffffff) : 0x888888;
     const rect = this.scene.add.rectangle(0, 0, w, h, 0x20252a, 0.95).setStrokeStyle(2, color, 0.9);
     rect.setInteractive({ useHandCursor: !!upgrade });
-    const label = this.scene.add.text(0, -h*0.35, upgrade ? upgrade.tier.toUpperCase() : '-', { fontFamily:'monospace', fontSize: 14, color:'#aaaaaa' }).setOrigin(0.5);
-    const text = this.scene.add.text(0, 0, upgrade ? upgrade.text : '—', { fontFamily:'monospace', fontSize: 18, color:'#ffffff', align:'center', wordWrap: { width: w - 24 } }).setOrigin(0.5);
-    const hint = this.scene.add.text(0, h*0.35, `Select (${index+1})`, { fontFamily:'monospace', fontSize: 14, color:'#999999' }).setOrigin(0.5);
+    const label = this.scene.add.text(0, -h*0.36, upgrade ? upgrade.tier.toUpperCase() : '-', { fontFamily:'monospace', fontSize: 12, color:'#aaaaaa' }).setOrigin(0.5);
+    const text = this.scene.add.text(0, 0, upgrade ? upgrade.text : '—', { fontFamily:'monospace', fontSize: 14, color:'#ffffff', align:'center', wordWrap: { width: w - 20 } }).setOrigin(0.5);
+    const hint = this.scene.add.text(0, h*0.36, `Select (${index+1})`, { fontFamily:'monospace', fontSize: 12, color:'#999999' }).setOrigin(0.5);
     root.add([rect, label, text, hint]);
 
     if (upgrade) {
@@ -114,4 +115,3 @@ export class LevelUpUI {
     this.container.destroy(true);
   }
 }
-
