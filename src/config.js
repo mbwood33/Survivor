@@ -24,7 +24,8 @@ export const INPUT = {
 export const PLAYER = {
   // Visual rectangle size (blue square)
   size: 24,
-  color: 0x2b6cb0,
+  // Neon cyan for player
+  color: 0x14e6ff,
   // Kinematic parameters (tuned for crisp but weighty feel)
   maxSpeed: 220,
   accel: 2000,
@@ -51,30 +52,30 @@ export const OBSTACLES = {
   minCount: 1500,
   maxCount: 2500,
   // Colors for placeholder visuals
-  treeColor: 0x2f9e44,
-  rockColor: 0x6c757d,
+  treeColor: 0x00ff85, // neon green
+  rockColor: 0x8a8fff, // soft neon violet
 };
 
 export const ENEMIES = {
   // Spawning and basic behaviors (milestone 5 baseline)
-  color: 0xc92a2a,
+  color: 0xff2a6d, // hot pink/red neon
   size: 20,
   hp: 8,
   speed: 90,
   spawnRadiusMin: 600,
   spawnRadiusMax: 900,
-  maxActive: 300,
+  maxActive: 600,
   spawnPerSecond: 1.5,
 };
 
 export const PROJECTILES = {
-  color: 0x3182ce,
+  color: 0x00e5ff, // bright cyan
   radius: 6,
   maxPool: 300,
 };
 
 export const XP_ORBS = {
-  color: 0x38b000,
+  color: 0x39ff14, // neon green
   radius: 6,
-  maxPool: 300,
+  maxPool: 2000,
 };

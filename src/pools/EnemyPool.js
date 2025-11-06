@@ -33,7 +33,7 @@ export class EnemyPool {
   }
 
   spawnAround(playerPos, opts = {}) {
-    if (this.active.length >= ENEMIES.maxActive) return;
+    if (!opts.ignoreCap && this.active.length >= ENEMIES.maxActive) return;
     const ang = Math.random() * Math.PI * 2;
     const dist = ENEMIES.spawnRadiusMin + Math.random() * (ENEMIES.spawnRadiusMax - ENEMIES.spawnRadiusMin);
     const x = playerPos.x + Math.cos(ang) * dist;
@@ -53,7 +53,8 @@ export class EnemyPool {
       this.spawnTimer += Math.max(0.05, 1 / rate);
       const hpMult = 1 + scene.difficultyLevel * 0.3 + elapsedMin * 0.1;
       const speedMult = 1 + scene.difficultyLevel * 0.05 + elapsedMin * 0.02;
-      this.spawnAround(playerPos, { hpMult, speedMult });
+      const ignoreCap = this.scene.remainingTime <= 0;
+      this.spawnAround(playerPos, { hpMult, speedMult, ignoreCap });
     }
   }
 }

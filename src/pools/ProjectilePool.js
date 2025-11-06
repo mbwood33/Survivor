@@ -20,6 +20,8 @@ export class ProjectilePool {
     this.hitsLeft = new Int16Array(PROJECTILES.maxPool); // total hits allowed (1 + pierce)
     this.critChance = new Float32Array(PROJECTILES.maxPool);
     this.critMult = new Float32Array(PROJECTILES.maxPool).fill(2);
+    this.maxDistance = new Float32Array(PROJECTILES.maxPool).fill(0);
+    this.travel = new Float32Array(PROJECTILES.maxPool).fill(0);
     this.sprites = new Array(PROJECTILES.maxPool);
 
     for (let i = 0; i < PROJECTILES.maxPool; i++) {
@@ -43,6 +45,8 @@ export class ProjectilePool {
     this.radius[id] = radius;
     this.critChance[id] = options.critChance || 0;
     this.critMult[id] = options.critMult || 2;
+    this.maxDistance[id] = options.maxDistance || (Math.hypot(vx, vy) * lifetime);
+    this.travel[id] = 0;
     const pierce = options.pierce || 0;
     this.hitsLeft[id] = 1 + Math.max(0, pierce|0);
     this.sprites[id].setPosition(x, y);
@@ -67,8 +71,10 @@ export class ProjectilePool {
       const p = this.pos[id];
       const v = this.vel[id];
       const oldX = p.x, oldY = p.y;
-      const newX = oldX + v.x * dt;
-      const newY = oldY + v.y * dt;
+      const stepX = v.x * dt;
+      const stepY = v.y * dt;
+      const newX = oldX + stepX;
+      const newY = oldY + stepY;
       // Terrain collision check using sweep AABB (circle radius-inclusive)
       if (this.collidesTerrain[id] && obstacleGrid) {
         const r = this.radius[id];
@@ -89,6 +95,8 @@ export class ProjectilePool {
         if (collided) { this.despawn(id); continue; }
       }
       p.x = newX; p.y = newY;
+      this.travel[id] += Math.hypot(stepX, stepY);
+      if (this.maxDistance[id] > 0 && this.travel[id] >= this.maxDistance[id]) { this.despawn(id); continue; }
       this.life[id] -= dt;
       if (this.life[id] <= 0) { this.despawn(id); continue; }
       // Outside world bounds + small margin

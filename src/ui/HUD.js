@@ -3,14 +3,16 @@
 export class HUD {
   constructor(scene) {
     this.scene = scene;
-    this.container = scene.add.container(16, 16).setScrollFactor(0).setDepth(1000);
+    const gw = scene.game.config.width;
+    const gh = scene.game.config.height;
+    this.container = scene.add.container(gw/2, gh - 8).setScrollFactor(0).setDepth(1000);
 
-    this.levelText = scene.add.text(0, 0, "Lv 1", { fontFamily: "monospace", fontSize: 12, color: "#ffffff" });
+    this.levelText = scene.add.text(-100, 0, "Lv 1", { fontFamily: "monospace", fontSize: 12, color: "#ffffff" }).setOrigin(1, 0.5);
     this.container.add(this.levelText);
 
-    const barW = 180; const barY = 18;
-    this.barBg = scene.add.rectangle(0, barY, barW, 8, 0x333333).setOrigin(0, 0.5);
-    this.barFg = scene.add.rectangle(0, barY, barW, 8, 0x4cc9f0).setOrigin(0, 0.5);
+    const barW = 220; const barY = 0;
+    this.barBg = scene.add.rectangle(0, barY, barW, 8, 0x333333).setOrigin(0.5, 0.5);
+    this.barFg = scene.add.rectangle(0, barY, barW, 8, 0x4cc9f0).setOrigin(0.5, 0.5);
     this.container.add([this.barBg, this.barFg]);
   }
 

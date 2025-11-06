@@ -396,6 +396,10 @@ export class GameScene extends Phaser.Scene {
           if (Math.random() < cc) dmg *= cm;
           const dead = e.hit(dmg);
           if (dead) this._killEnemy(e);
+          // Hit feedback: small particle burst
+          this._spawnHitParticles(p.x, p.y, cc > 0 && Math.random() < cc);
+          // Damage numbers
+          this._floatText(p.x, p.y - 8, Math.round(dmg).toString(), 0xfff275);
           hitThisFrame.add(e);
           remaining--;
           if (this.projectiles.hitsLeft) this.projectiles.hitsLeft[id] = remaining;
@@ -407,7 +411,12 @@ export class GameScene extends Phaser.Scene {
 
   _killEnemy(enemy) {
     // Spawn an XP orb; value based on difficulty and timer
-    this.xpOrbs.spawn(enemy.pos.x, enemy.pos.y, this._xpValueForKill());
+    let value = this._xpValueForKill();
+    if (enemy.isBoss) value += 3;
+    if (enemy.isFinal) value += 6;
+    // Drop multiple orbs if value is high
+    while (value > 3) { this.xpOrbs.spawn(enemy.pos.x, enemy.pos.y, 3); value -= 3; }
+    this.xpOrbs.spawn(enemy.pos.x, enemy.pos.y, Math.max(1, value));
     this.enemyPool.release(enemy);
     if (enemy.isFinal) {
       this._finalBossAlive = false;
@@ -427,6 +436,36 @@ export class GameScene extends Phaser.Scene {
     if (r < p3) return 3;
     if (r < p3 + p2) return 2;
     return 1;
+  }
+
+  _spawnHitParticles(x, y, crit = false) {
+    // Create a tiny neon texture on the fly if missing
+    if (!this.textures.exists('p')) {
+      const g = this.add.graphics();
+      g.fillStyle(0xffffff, 1).fillRect(0, 0, 2, 2).generateTexture('p', 2, 2); g.destroy();
+    }
+    const color = crit ? 0xfff275 : 0x00e5ff;
+    // In Phaser 3.90, add.particles(x, y, texture, config) returns a ParticleEmitter directly
+    const emitter = this.add.particles(x, y, 'p', {
+      speed: { min: 30, max: 120 },
+      angle: { min: 0, max: 360 },
+      lifespan: 250,
+      quantity: 8,
+      gravityY: 0,
+      scale: { start: 1, end: 0 },
+      tint: color,
+      alpha: { start: 1, end: 0 },
+      blendMode: 'ADD'
+    });
+    this.time.delayedCall(80, () => emitter.stop());
+    // Clean up the underlying manager shortly after
+    this.time.delayedCall(500, () => { if (emitter.manager) emitter.manager.destroy(); });
+  }
+
+  _floatText(x, y, text, color = 0xffffff) {
+    const t = this.add.text(x, y, text, { fontFamily:'monospace', fontSize: 10, color: '#ffffff' }).setOrigin(0.5).setDepth(1000);
+    t.setTint(color);
+    this.tweens.add({ targets: t, y: y - 16, alpha: 0, duration: 600, ease: 'cubic.out', onComplete: () => t.destroy() });
   }
 
   _showEndBanner(text) {
@@ -522,7 +561,7 @@ export class GameScene extends Phaser.Scene {
     if (prev > 180 && this.remainingTime <= 180) ev('swarm2', () => this._spawnSwarm(80));
     if (prev > 90 && this.remainingTime <= 90) ev('portal', () => this._spawnPortal());
     if (prev > 30 && this.remainingTime <= 30) ev('boss2', () => this._spawnBoss());
-    if (prev > 0 && this.remainingTime <= 0) ev('final_swarm', () => { this._finalSwarmStart = Date.now(); });
+    if (prev > 0 && this.remainingTime <= 0) ev('final_swarm', () => { this._finalSwarmStart = Date.now(); this._announce && this._announce('Final Swarm!'); });
 
     // After time reaches 0, escalate spawns each minute
     if (this.remainingTime <= 0) {
@@ -536,6 +575,22 @@ export class GameScene extends Phaser.Scene {
 
   _spawnSwarm(count) {
     for (let i = 0; i < count; i++) this.enemyPool.spawnAround(this.player.pos);
+    this._announce && this._announce(`Swarm +${count}`);
+  }
+
+  _announce(text) {
+    if (!this._announceContainer) {
+      this._announceContainer = this.add.container(this.game.config.width/2, 24).setScrollFactor(0).setDepth(2500);
+    }
+    const t = this.add.text(0, 0, text, { fontFamily:'monospace', fontSize: 14, color:'#ffd166' }).setOrigin(0.5);
+    t.setStroke('#000000', 4);
+    this._announceContainer.add(t);
+    t.alpha = 0;
+    this.tweens.add({ targets: t, alpha: 1, duration: 150, yoyo: false, onComplete: () => {
+      this.time.delayedCall(1100, () => {
+        this.tweens.add({ targets: t, alpha: 0, y: t.y - 8, duration: 350, onComplete: () => t.destroy() });
+      });
+    }});
   }
 
   _spawnBoss() {
@@ -550,6 +605,7 @@ export class GameScene extends Phaser.Scene {
     e.rect.setFillStyle(0x8a2be2); // purple
     e.isBoss = true;
     this._finalBossAlive = true;
+    this._announce && this._announce('Boss Approaches');
   }
 
   _spawnPortal() {
@@ -558,6 +614,7 @@ export class GameScene extends Phaser.Scene {
     const y = Math.random() * WORLD.height;
     const s = this.add.rectangle(x, y, 36, 36, 0x00d1b2).setOrigin(0.5).setDepth(3);
     this._portal = { sprite: s, x, y, radius: 48, active: true };
+    this._announce && this._announce('Portal Revealed');
   }
 
   _openLevelUpDraft() {

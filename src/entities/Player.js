@@ -86,6 +86,16 @@ export class PlayerController {
     } else {
       vec2MoveTowardZero(this.vel, this.vel, this.friction, dt);
     }
+    // Turn assist: reduce perpendicular velocity to input for snappier control at high speeds
+    if (len > 0.2) {
+      const nx = dir.x / len, ny = dir.y / len;
+      const vdot = this.vel.x * nx + this.vel.y * ny;
+      const projX = nx * vdot, projY = ny * vdot;
+      const sideX = this.vel.x - projX, sideY = this.vel.y - projY;
+      const sideScale = Math.max(0, 1 - 4.0 * dt); // quickly damp sideways component
+      this.vel.x = projX + sideX * sideScale;
+      this.vel.y = projY + sideY * sideScale;
+    }
     // Clamp velocity to max speed
     const spd = vec2Length(this.vel);
     if (spd > this.maxSpeed) {
@@ -194,6 +204,7 @@ export class PlayerController {
 
     const count = resolved.amount;
     const radius = PROJECTILES.radius * resolved.size;
+    const maxDistance = resolved.speed * resolved.lifetime;
 
     if (target) {
       // Per-projectile targeting of nearest enemies
@@ -211,7 +222,7 @@ export class PlayerController {
           dir.y * resolved.speed,
           resolved.damage,
           resolved.lifetime,
-          { collidesTerrain: true, radius, critChance: resolved.critChance, critMult: resolved.critMult, pierce: resolved.pierce }
+          { collidesTerrain: true, radius, critChance: resolved.critChance, critMult: resolved.critMult, pierce: resolved.pierce, maxDistance }
         );
       }
     } else {
@@ -227,7 +238,7 @@ export class PlayerController {
           dir.y * resolved.speed,
           resolved.damage,
           resolved.lifetime,
-          { collidesTerrain: true, radius, critChance: resolved.critChance, critMult: resolved.critMult, pierce: resolved.pierce }
+          { collidesTerrain: true, radius, critChance: resolved.critChance, critMult: resolved.critMult, pierce: resolved.pierce, maxDistance }
         );
       }
       this.volleyPhase += 0.35;

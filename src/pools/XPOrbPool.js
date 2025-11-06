@@ -24,8 +24,13 @@ export class XPOrbPool {
   }
 
   spawn(x, y, value = 1) {
-    if (this.free.length === 0) return -1;
-    const id = this.free.pop();
+    // If pool exhausted, recycle the oldest active orb by value (simple fallback)
+    let id = this.free.pop();
+    if (id === undefined) {
+      // pick any active id to recycle (start from 0)
+      for (let i = 0; i < this.max; i++) { if (this.alive[i]) { id = i; break; } }
+      if (id === undefined) return -1;
+    }
     this.alive[id] = true;
     this.pos[id].x = x; this.pos[id].y = y;
     // small random drift
@@ -39,7 +44,7 @@ export class XPOrbPool {
     const color = value >= 3 ? 0xf4d35e : value === 2 ? 0x4cc9f0 : XP_ORBS.color;
     this.sprites[id].setFillStyle(color);
     this.sprites[id].setVisible(true);
-    this.countActive++;
+    if (this.free.length >= 0) this.countActive = this.alive.reduce((a,b)=>a+(b?1:0),0);
     return id;
   }
 
