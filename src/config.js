@@ -33,7 +33,7 @@ export const PLAYER = {
   // Combat stats (will be used in milestones 5/6)
   hpMax: 100,
   // Weapon defaults (milestone 6)
-  projDamage: 2,
+  projDamage: 4,
   projSpeed: 520,
   projLifetime: 1.4,
   fireCooldown: 0.35,
@@ -60,7 +60,7 @@ export const ENEMIES = {
   // Spawning and basic behaviors (milestone 5 baseline)
   color: 0xff2a6d, // hot pink/red neon
   size: 20,
-  hp: 8,
+  hp: 20,
   speed: 90,
   spawnRadiusMin: 600,
   spawnRadiusMax: 900,

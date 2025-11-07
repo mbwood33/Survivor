@@ -394,18 +394,30 @@ export class GameScene extends Phaser.Scene {
           const cc = this.projectiles.critChance[id] || 0;
           const cm = this.projectiles.critMult[id] || 2;
           if (Math.random() < cc) dmg *= cm;
+          // Clamp to max single-hit damage
+          dmg = Math.min(999, Math.max(0, dmg));
           const dead = e.hit(dmg);
           if (dead) this._killEnemy(e);
-          // Hit feedback: small particle burst
-          this._spawnHitParticles(p.x, p.y, cc > 0 && Math.random() < cc);
-          // Damage numbers
-          this._floatText(p.x, p.y - 8, Math.round(dmg).toString(), 0xfff275);
+          // Hit feedback: small particle burst + sprite-based damage numbers
+          const isCrit = (cc > 0 && Math.random() < cc);
+          this._spawnHitParticles(p.x, p.y, isCrit);
+          this._damageNumber(p.x, p.y - 10, Math.round(dmg), isCrit);
           hitThisFrame.add(e);
           remaining--;
           if (this.projectiles.hitsLeft) this.projectiles.hitsLeft[id] = remaining;
           if (remaining <= 0) { this.projectiles.despawn(id); break; }
         }
       }
+    }
+  }
+
+  preload() {
+    // Damage numbers spritesheet: 2 rows (0: white, 1: yellow crit), 10 columns (0-9)
+    if (!this.textures.exists('bignums')) {
+      this.load.spritesheet('bignums', 'assets/sprites/fonts/big-big-nums.png', {
+        frameWidth: 17,
+        frameHeight: 31,
+      });
     }
   }
 
@@ -466,6 +478,35 @@ export class GameScene extends Phaser.Scene {
     const t = this.add.text(x, y, text, { fontFamily:'monospace', fontSize: 10, color: '#ffffff' }).setOrigin(0.5).setDepth(1000);
     t.setTint(color);
     this.tweens.add({ targets: t, y: y - 16, alpha: 0, duration: 600, ease: 'cubic.out', onComplete: () => t.destroy() });
+  }
+
+  _damageNumber(x, y, value, isCrit = false) {
+    // If spritesheet missing, fallback to text
+    if (!this.textures.exists('bignums')) { this._floatText(x, y, String(value), isCrit ? 0xfff275 : 0xffffff); return; }
+    const str = String(Math.max(0, value|0));
+    const container = this.add.container(x, y).setDepth(1200);
+    const scale = 0.6; // adjust for 640x360 virtual res
+    const digitW = 17 * scale;
+    const totalW = str.length * digitW;
+    for (let i = 0; i < str.length; i++) {
+      const d = str.charCodeAt(i) - 48; // '0' -> 0
+      const row = isCrit ? 1 : 0;
+      const frame = row * 10 + Phaser.Math.Clamp(d, 0, 9);
+      const spr = this.add.image(-totalW/2 + i * digitW + digitW/2, 0, 'bignums', frame).setOrigin(0.5);
+      spr.setScale(scale);
+      spr.setBlendMode(Phaser.BlendModes.ADD);
+      container.add(spr);
+    }
+    // Float up + fade + slight scale down
+    this.tweens.add({
+      targets: container,
+      y: y - 20,
+      alpha: 0,
+      scale: 0.9,
+      duration: 650,
+      ease: 'cubic.out',
+      onComplete: () => container.destroy(),
+    });
   }
 
   _showEndBanner(text) {

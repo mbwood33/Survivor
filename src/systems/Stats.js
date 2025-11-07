@@ -2,7 +2,8 @@
 
 export function createDefaultStats() {
   return {
-    damage: 1.0,
+    damage: 1.0,          // multiplicative damage scaler (percent-based)
+    baseDamageAdd: 0,     // additive base damage (+X to base before multipliers)
     attackSpeed: 0.0, // 0.25 => 25% faster (CD / 1.25)
     projectileSpeed: 1.0,
     projectileAmount: 0, // additive
@@ -19,7 +20,7 @@ export function createDefaultStats() {
 // Compute a resolved per-shot snapshot from base weapon and current stats.
 export function resolveShot(base, stats) {
   return {
-    damage: base.damage * stats.damage,
+    damage: (base.damage + (stats.baseDamageAdd || 0)) * stats.damage,
     cooldown: base.cooldown / (1 + stats.attackSpeed),
     speed: base.speed * stats.projectileSpeed,
     lifetime: base.lifetime * stats.duration,

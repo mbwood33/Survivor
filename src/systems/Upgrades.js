@@ -4,7 +4,7 @@ export const RarityWeights = { common: 70, uncommon: 25, rare: 5 };
 
 export const Upgrades = [
   // Common
-  { id:'dmg1',  tier:'common',  text:'+15% Damage',       apply:s=>s.damage*=1.15, lanes:['damage'] },
+  { id:'dmg1',  tier:'common',  text:'+15% Damage (Mult)', apply:s=>s.damage*=1.15, lanes:['damage'] },
   { id:'atk1',  tier:'common',  text:'+15% Attack Speed', apply:s=>s.attackSpeed+=0.15, lanes:['attackSpeed'] },
   { id:'spd1',  tier:'common',  text:'+20% Projectile Speed', apply:s=>s.projectileSpeed*=1.20, lanes:['projectileSpeed'] },
   { id:'amt1',  tier:'common',  text:'+1 Projectile',     apply:s=>s.projectileAmount+=1, lanes:['projectileAmount'] },
@@ -14,22 +14,24 @@ export const Upgrades = [
   { id:'ms1',   tier:'common',  text:'+15% Move Speed',   apply:s=>s.moveSpeed*=1.15, lanes:['moveSpeed'] },
 
   // Uncommon
-  { id:'dmg2',  tier:'uncommon', text:'+30% Damage',       apply:s=>s.damage*=1.30, lanes:['damage'] },
+  { id:'dmg2',  tier:'uncommon', text:'+25% Damage (Mult)', apply:s=>s.damage*=1.25, lanes:['damage'] },
   { id:'atk2',  tier:'uncommon', text:'+25% Attack Speed', apply:s=>s.attackSpeed+=0.25, lanes:['attackSpeed'] },
   { id:'pier1', tier:'uncommon', text:'+1 Pierce',         apply:s=>s.pierce+=1, lanes:['pierce'] },
   { id:'crit1', tier:'uncommon', text:'+8% Crit Chance',   apply:s=>s.critChance+=0.08, lanes:['critChance'] },
+  { id:'bdmg1', tier:'uncommon', text:'+1 Base Damage',    apply:s=>s.baseDamageAdd+=1, lanes:['baseDamage'] },
   { id:'ms2',   tier:'uncommon', text:'+25% Move Speed',   apply:s=>s.moveSpeed*=1.25, lanes:['moveSpeed'] },
 
   // Rare
   { id:'amt2',  tier:'rare', text:'+2 Projectiles',        apply:s=>s.projectileAmount+=2, lanes:['projectileAmount'] },
-  { id:'dmg3',  tier:'rare', text:'+60% Damage',           apply:s=>s.damage*=1.60, lanes:['damage'] },
+  { id:'dmg3',  tier:'rare', text:'+40% Damage (Mult)',    apply:s=>s.damage*=1.40, lanes:['damage'] },
   { id:'atk3',  tier:'rare', text:'+40% Attack Speed',     apply:s=>s.attackSpeed+=0.40, lanes:['attackSpeed'] },
   { id:'crit2', tier:'rare', text:'+15% Crit Chance',      apply:s=>s.critChance+=0.15, lanes:['critChance'] },
+  { id:'bdmg2', tier:'rare', text:'+2 Base Damage',        apply:s=>s.baseDamageAdd+=2, lanes:['baseDamage'] },
   { id:'ms3',   tier:'rare', text:'+40% Move Speed',       apply:s=>s.moveSpeed*=1.40, lanes:['moveSpeed'] },
 ];
 
 export const UpgradeCaps = {
-  damage: 10, attackSpeed: 10, projSize: 10, duration: 10,
+  damage: 10, baseDamage: 8, attackSpeed: 10, projSize: 10, duration: 10,
   projectileSpeed: 10, magnet: 8, projectileAmount: 9,
   pierce: 6, critChance: 8, moveSpeed: 8,
 };
