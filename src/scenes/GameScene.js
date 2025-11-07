@@ -28,7 +28,7 @@ export class GameScene extends Phaser.Scene {
     // Level-up state
     this.levelUpActive = false;
     this.pendingLevelUps = 0;
-    this.rerollsLeft = 2;
+    this.rerollsLeft = 5;
     this.draftRng = new RNG((Date.now() ^ 0xabad1dea) | 0);
     this.levelUpUI = null;
 
@@ -44,6 +44,10 @@ export class GameScene extends Phaser.Scene {
     this._portal = null; // {sprite, x, y, radius}
     this._finalBossAlive = false;
     this._padStartPrev = false;
+
+    // Player contact damage cooldown (interval between ticks when touching enemies)
+    this.playerContactInterval = 0.35; // seconds between damage ticks
+    this.playerContactTimer = 0;
   }
 
   create() {
@@ -256,30 +260,20 @@ export class GameScene extends Phaser.Scene {
     if (up) y -= 1;
     if (down) y += 1;
 
-    // Gamepad left stick
+    // Gamepad left stick (no smoothing, with deadzone)
     if (this.pad) {
       const sx = this.pad.axes.length > 0 ? this.pad.axes[0].getValue() : 0;
       const sy = this.pad.axes.length > 1 ? this.pad.axes[1].getValue() : 0;
       const mag = Math.hypot(sx, sy);
       if (mag > INPUT.gamepadDeadzone) {
-        x += sx; y += sy;
+        x = sx; y = sy;
       }
     }
 
-    // Build a normalized target direction from raw inputs
+    // Normalize
     const len = Math.hypot(x, y);
-    const targetX = len > 0 ? x / len : 0;
-    const targetY = len > 0 ? y / len : 0;
-
-    // Exponential smoothing towards target to soften keyboard/pad changes
-    this.smoothedDir.x = Phaser.Math.Linear(this.smoothedDir.x, targetX, INPUT.smoothingK);
-    this.smoothedDir.y = Phaser.Math.Linear(this.smoothedDir.y, targetY, INPUT.smoothingK);
-
-    // Snap to zero when very close to avoid perpetual tiny drift
-    if (Math.abs(this.smoothedDir.x) < 1e-3) this.smoothedDir.x = 0;
-    if (Math.abs(this.smoothedDir.y) < 1e-3) this.smoothedDir.y = 0;
-
-    return this.smoothedDir;
+    if (len > 0) { x /= len; y /= len; }
+    return { x, y };
   }
 
   _handleHotkeys() {
@@ -293,6 +287,7 @@ export class GameScene extends Phaser.Scene {
     if (Phaser.Input.Keyboard.JustDown(this.keys.ESC)) {
       this._pausedByUser = !this._pausedByUser;
       this.gamePaused = this._pausedByUser || this.levelUpActive;
+      if (this.gamePaused) this.tweens.pauseAll(); else this.tweens.resumeAll();
     }
     if (this.pad) {
       const startPressed = this.pad.buttons && this.pad.buttons[9] && this.pad.buttons[9].pressed;
@@ -414,7 +409,7 @@ export class GameScene extends Phaser.Scene {
   preload() {
     // Damage numbers spritesheet: 2 rows (0: white, 1: yellow crit), 10 columns (0-9)
     if (!this.textures.exists('bignums')) {
-      this.load.spritesheet('bignums', 'assets/sprites/fonts/big-big-nums.png', {
+      this.load.spritesheet('bignums', 'assets/sprites/fonts/big-big-nums-1.png', {
         frameWidth: 17,
         frameHeight: 31,
       });
@@ -480,7 +475,7 @@ export class GameScene extends Phaser.Scene {
     this.tweens.add({ targets: t, y: y - 16, alpha: 0, duration: 600, ease: 'cubic.out', onComplete: () => t.destroy() });
   }
 
-  _damageNumber(x, y, value, isCrit = false) {
+  _damageNumber(x, y, value, isCrit = false, isPlayer = false) {
     // If spritesheet missing, fallback to text
     if (!this.textures.exists('bignums')) { this._floatText(x, y, String(value), isCrit ? 0xfff275 : 0xffffff); return; }
     const str = String(Math.max(0, value|0));
@@ -490,7 +485,7 @@ export class GameScene extends Phaser.Scene {
     const totalW = str.length * digitW;
     for (let i = 0; i < str.length; i++) {
       const d = str.charCodeAt(i) - 48; // '0' -> 0
-      const row = isCrit ? 1 : 0;
+      const row = isPlayer ? 2 : (isCrit ? 1 : 0);
       const frame = row * 10 + Phaser.Math.Clamp(d, 0, 9);
       const spr = this.add.image(-totalW/2 + i * digitW + digitW/2, 0, 'bignums', frame).setOrigin(0.5);
       spr.setScale(scale);
@@ -518,7 +513,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   _enemyContactDamage(dt) {
-    // If enemy overlaps player, apply contact damage over time (simple)
+    // Overlaps cause periodic damage ticks with a global interval
     let total = 0;
     for (let i = 0; i < this.enemyPool.active.length; i++) {
       const e = this.enemyPool.active[i];
@@ -529,7 +524,13 @@ export class GameScene extends Phaser.Scene {
         total++;
       }
     }
-    if (total > 0) this.player.damage(5 * dt * total); // 5 dps per overlapping enemy
+    this.playerContactTimer -= dt;
+    if (total > 0 && this.playerContactTimer <= 0) {
+      const dmg = Math.max(1, Math.round(3 * total)); // discrete hits per tick
+      this.player.damage(dmg);
+      this._damageNumber(this.player.pos.x, this.player.pos.y - 10, dmg, false, true);
+      this.playerContactTimer = this.playerContactInterval;
+    }
   }
 
   update(time, deltaMs) {
@@ -661,6 +662,7 @@ export class GameScene extends Phaser.Scene {
   _openLevelUpDraft() {
     this.levelUpActive = true;
     this.gamePaused = true;
+    this.tweens.pauseAll();
     const choices = pickDraft(this.draftRng, this.player.statsCounters, 3);
     // If no normal upgrades available, offer utility choices
     let finalChoices = choices;
@@ -700,6 +702,7 @@ export class GameScene extends Phaser.Scene {
     if (this.levelUpUI) { this.levelUpUI.destroy(); this.levelUpUI = null; }
     this.levelUpActive = false;
     this.gamePaused = this._pausedByUser; // resume if not user-paused
+    if (!this.gamePaused) this.tweens.resumeAll();
     // If multiple level-ups queued, open next immediately
     if (this.pendingLevelUps > 0) { this.pendingLevelUps--; this._openLevelUpDraft(); }
   }

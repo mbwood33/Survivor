@@ -17,8 +17,11 @@ export class Enemy {
     this.collider = { w: ENEMIES.size, h: ENEMIES.size, ox: -ENEMIES.size / 2, oy: -ENEMIES.size / 2 };
 
     this.rect = scene.add.rectangle(0, 0, ENEMIES.size, ENEMIES.size, ENEMIES.color).setOrigin(0.5);
+    this.rect.setStrokeStyle(1, 0x000000, 0.8);
     this.rect.setDepth(5);
     this.rect.setVisible(false);
+    this.hpBarBg = scene.add.rectangle(0, -ENEMIES.size*0.7, ENEMIES.size, 3, 0x111111).setOrigin(0.5).setVisible(false).setDepth(6);
+    this.hpBarFg = scene.add.rectangle(0, -ENEMIES.size*0.7, ENEMIES.size, 3, 0xff2a6d).setOrigin(0.5).setVisible(false).setDepth(7);
   }
 
   spawn(x, y, opts = {}) {
@@ -42,6 +45,8 @@ export class Enemy {
     this.rect.setPosition(x, y);
     this.rect.setFillStyle(ENEMIES.color);
     this.rect.setVisible(true);
+    this.hpBarBg.setPosition(x, y - this.rect.height*0.7).setVisible(!!opts.isBoss);
+    this.hpBarFg.setPosition(x, y - this.rect.height*0.7).setVisible(!!opts.isBoss);
     this.isBoss = false; this.isFinal = false;
     return this;
   }
@@ -49,6 +54,8 @@ export class Enemy {
   despawn() {
     this.alive = false;
     this.rect.setVisible(false);
+    this.hpBarBg.setVisible(false);
+    this.hpBarFg.setVisible(false);
   }
 
   update(dt, playerPos) {
@@ -123,6 +130,12 @@ export class Enemy {
     }
 
     this.rect.setPosition(this.pos.x, this.pos.y);
+    if (this.hpBarBg.visible) {
+      const w = this.rect.width;
+      const pct = Math.max(0, Math.min(1, this.hp / this.hpMax));
+      this.hpBarBg.setPosition(this.pos.x, this.pos.y - this.rect.height*0.7);
+      this.hpBarFg.setPosition(this.pos.x - w*(1-pct)/2, this.pos.y - this.rect.height*0.7).setSize(w * pct, 3);
+    }
 
     if (this.onHitTintTimer > 0) {
       this.onHitTintTimer -= dt;
@@ -140,4 +153,3 @@ export class Enemy {
     return this.hp <= 0;
   }
 }
-

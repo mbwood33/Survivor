@@ -34,10 +34,22 @@ export class EnemyPool {
 
   spawnAround(playerPos, opts = {}) {
     if (!opts.ignoreCap && this.active.length >= ENEMIES.maxActive) return;
-    const ang = Math.random() * Math.PI * 2;
-    const dist = ENEMIES.spawnRadiusMin + Math.random() * (ENEMIES.spawnRadiusMax - ENEMIES.spawnRadiusMin);
-    const x = playerPos.x + Math.cos(ang) * dist;
-    const y = playerPos.y + Math.sin(ang) * dist;
+    // Spawn within on-screen annulus near the player, but not on top
+    const cam = this.scene.cameras.main;
+    const vw = cam.worldView;
+    const pad = 40;
+    const minDist = 100; // do not spawn closer than this to player
+    const maxRadX = Math.max(0, vw.width/2 - pad);
+    const maxRadY = Math.max(0, vw.height/2 - pad);
+    let x, y;
+    let tries = 12;
+    do {
+      const rx = (Math.random()*2-1) * maxRadX;
+      const ry = (Math.random()*2-1) * maxRadY;
+      x = Phaser.Math.Clamp(playerPos.x + rx, vw.x + pad, vw.x + vw.width - pad);
+      y = Phaser.Math.Clamp(playerPos.y + ry, vw.y + pad, vw.y + vw.height - pad);
+      tries--;
+    } while (tries > 0 && ((x - playerPos.x) ** 2 + (y - playerPos.y) ** 2) < (minDist * minDist));
     const e = this.obtain().spawn(x, y, opts);
     return e;
   }

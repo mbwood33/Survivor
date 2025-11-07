@@ -75,32 +75,14 @@ export class PlayerController {
   }
 
   applyInput(dir, dt) {
-    // Accelerate toward input direction; treat near-zero as no input due to smoothing tail
+    // Immediate, frictionless movement: set velocity directly based on input
     const len = Math.hypot(dir.x, dir.y);
-    const threshold = 0.2; // deadzone for smoothed input
-    if (len > threshold) {
-      const nx = dir.x / len;
-      const ny = dir.y / len;
-      this.vel.x += nx * this.accel * dt;
-      this.vel.y += ny * this.accel * dt;
-    } else {
-      vec2MoveTowardZero(this.vel, this.vel, this.friction, dt);
-    }
-    // Turn assist: reduce perpendicular velocity to input for snappier control at high speeds
-    if (len > 0.2) {
+    if (len > 0) {
       const nx = dir.x / len, ny = dir.y / len;
-      const vdot = this.vel.x * nx + this.vel.y * ny;
-      const projX = nx * vdot, projY = ny * vdot;
-      const sideX = this.vel.x - projX, sideY = this.vel.y - projY;
-      const sideScale = Math.max(0, 1 - 4.0 * dt); // quickly damp sideways component
-      this.vel.x = projX + sideX * sideScale;
-      this.vel.y = projY + sideY * sideScale;
-    }
-    // Clamp velocity to max speed
-    const spd = vec2Length(this.vel);
-    if (spd > this.maxSpeed) {
-      const s = this.maxSpeed / spd;
-      this.vel.x *= s; this.vel.y *= s;
+      this.vel.x = nx * this.maxSpeed;
+      this.vel.y = ny * this.maxSpeed;
+    } else {
+      this.vel.x = 0; this.vel.y = 0;
     }
   }
 
