@@ -47,6 +47,19 @@ export class Enemy {
     this.rect.setVisible(true);
     this.hpBarBg.setPosition(x, y - this.rect.height*0.7).setVisible(!!opts.isBoss);
     this.hpBarFg.setPosition(x, y - this.rect.height*0.7).setVisible(!!opts.isBoss);
+    // Spawn animation: stationary and harmless until finished
+    this.isSpawning = true;
+    this.canDamage = false;
+    this.rect.alpha = 0; this.rect.scaleY = 0.1;
+    const dur = ENEMIES.spawnTimeMs || 500;
+    if (this._spawnTween) { this._spawnTween.remove(); this._spawnTween = null; }
+    this._spawnTween = this.scene.tweens.add({
+      targets: this.rect,
+      alpha: 1,
+      scaleY: 1,
+      duration: dur,
+      onComplete: () => { this.isSpawning = false; this.canDamage = true; this._spawnTween = null; }
+    });
     this.isBoss = false; this.isFinal = false;
     return this;
   }
@@ -56,10 +69,20 @@ export class Enemy {
     this.rect.setVisible(false);
     this.hpBarBg.setVisible(false);
     this.hpBarFg.setVisible(false);
+    if (this._spawnTween) { this._spawnTween.remove(); this._spawnTween = null; }
   }
 
   update(dt, playerPos) {
     if (!this.alive) return;
+    if (this.isSpawning) {
+      // Align visuals during spawn
+      this.rect.setPosition(this.pos.x, this.pos.y);
+      if (this.hpBarBg.visible) {
+        this.hpBarBg.setPosition(this.pos.x, this.pos.y - this.rect.height*0.7);
+        this.hpBarFg.setPosition(this.pos.x, this.pos.y - this.rect.height*0.7);
+      }
+      return;
+    }
     // Simple steering: move toward player target direction at constant speed
     const dx = playerPos.x - this.pos.x;
     const dy = playerPos.y - this.pos.y;
@@ -143,6 +166,53 @@ export class Enemy {
         this.rect.setFillStyle(this.isBoss ? this.rect.fillColor : ENEMIES.color);
       }
     }
+  }
+
+  // Push this enemy by a displacement while respecting world obstacles (axis-separated)
+  pushBy(dx, dy, obstacleGrid) {
+    if (!dx && !dy) return;
+    const aabb = () => ({ x: this.pos.x + this.collider.ox, y: this.pos.y + this.collider.oy, w: this.collider.w, h: this.collider.h });
+    const cur = aabb();
+    const sweep = { x: Math.min(cur.x, cur.x + dx), y: Math.min(cur.y, cur.y + dy), w: cur.w + Math.abs(dx), h: cur.h + Math.abs(dy) };
+    const candidates = obstacleGrid ? obstacleGrid.query(sweep, []) : [];
+    const epsilon = 1e-6;
+    if (dx) {
+      this.pos.x += dx;
+      let a = aabb();
+      for (let iter = 0; iter < 3; iter++) {
+        let any = false;
+        for (let i = 0; i < candidates.length; i++) {
+          const o = candidates[i];
+          if (!o.solid) continue;
+          if (!aabbIntersects(a, o.aabb)) continue;
+          const mtvX = aabbOverlapX(a, o.aabb);
+          if (mtvX !== 0) {
+            this.pos.x += mtvX + (mtvX > 0 ? epsilon : -epsilon);
+            any = true; a = aabb();
+          }
+        }
+        if (!any) break;
+      }
+    }
+    if (dy) {
+      this.pos.y += dy;
+      let a = aabb();
+      for (let iter = 0; iter < 3; iter++) {
+        let any = false;
+        for (let i = 0; i < candidates.length; i++) {
+          const o = candidates[i];
+          if (!o.solid) continue;
+          if (!aabbIntersects(a, o.aabb)) continue;
+          const mtvY = aabbOverlapY(a, o.aabb);
+          if (mtvY !== 0) {
+            this.pos.y += mtvY + (mtvY > 0 ? epsilon : -epsilon);
+            any = true; a = aabb();
+          }
+        }
+        if (!any) break;
+      }
+    }
+    this.rect.setPosition(this.pos.x, this.pos.y);
   }
 
   hit(dmg) {
