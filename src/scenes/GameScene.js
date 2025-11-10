@@ -132,6 +132,7 @@ export class GameScene extends Phaser.Scene {
     this.enemyPool = new EnemyPool(this);
     this.projectiles = new ProjectilePool(this);
     this.xpOrbs = new XPOrbPool(this);
+    this.enemyGrid = new SpatialGrid(64);
 
     // Debug graphics overlay reused each frame
     this.debugGfx = this.add.graphics().setDepth(100);
@@ -546,7 +547,7 @@ export class GameScene extends Phaser.Scene {
     let total = 0;
     for (let i = 0; i < this.enemyPool.active.length; i++) {
       const e = this.enemyPool.active[i];
-      if (!e.alive) continue;
+      if (!e.alive || e.isSpawning || !e.canDamage) continue;
       const dx = e.pos.x - this.player.pos.x, dy = e.pos.y - this.player.pos.y;
       const rr = e.radius + 12; // cheap circle-vs-circle with player approx
       if (dx * dx + dy * dy <= rr * rr) {
@@ -583,6 +584,9 @@ export class GameScene extends Phaser.Scene {
       // Enemies and auto-spawn
       this.enemyPool.autoSpawn(step, this.player.pos);
       this.enemyPool.update(step, this.player.pos);
+      this._buildEnemyGrid();
+      this._separateEnemies();
+      this._resolvePlayerEnemyCollisions();
       // Player auto-fire and projectile updates
       this.player.tryAutoFire(step, (x, y) => this._findNearestEnemy(x, y, 900), this.projectiles);
       this.projectiles.update(step, this.obstacleGrid);
@@ -814,6 +818,70 @@ export class GameScene extends Phaser.Scene {
       g.lineStyle(1, 0x38b000, 0.8);
       g.strokeCircle(this.player.pos.x, this.player.pos.y, this.player.magnetRadius);
       g.strokeCircle(this.player.pos.x, this.player.pos.y, this.player.pickupRadius);
+    }
+  }
+
+  _buildEnemyGrid() {
+    if (!this.enemyGrid) return;
+    this.enemyGrid.clear();
+    for (let i = 0; i < this.enemyPool.active.length; i++) {
+      const e = this.enemyPool.active[i];
+      if (!e.alive) continue;
+      const r = e.radius;
+      this.enemyGrid.insert(e, { x: e.pos.x - r, y: e.pos.y - r, w: r * 2, h: r * 2 });
+    }
+  }
+
+  _separateEnemies() {
+    if (!this.enemyGrid) return;
+    const tmp = [];
+    for (let i = 0; i < this.enemyPool.active.length; i++) {
+      const e = this.enemyPool.active[i];
+      if (!e.alive) continue;
+      const r = e.radius;
+      const neigh = this.enemyGrid.query({ x: e.pos.x - r * 2, y: e.pos.y - r * 2, w: r * 4, h: r * 4 }, tmp);
+      for (let j = 0; j < neigh.length; j++) {
+        const o = neigh[j]; if (o === e || !o.alive) continue;
+        const dx = e.pos.x - o.pos.x, dy = e.pos.y - o.pos.y;
+        const dist = Math.hypot(dx, dy);
+        const minDist = e.radius + o.radius;
+        if (dist > 0 && dist < minDist) {
+          const overlap = (minDist - dist) + 0.01;
+          const ux = dx / dist, uy = dy / dist;
+          const moveE = o.isSpawning ? 1.0 : 0.5;
+          const moveO = e.isSpawning ? 0.0 : 0.5;
+          e.pos.x += ux * overlap * moveE;
+          e.pos.y += uy * overlap * moveE;
+          o.pos.x -= ux * overlap * moveO;
+          o.pos.y -= uy * overlap * moveO;
+          e.rect.setPosition(e.pos.x, e.pos.y);
+          o.rect.setPosition(o.pos.x, o.pos.y);
+        }
+      }
+    }
+  }
+
+  _resolvePlayerEnemyCollisions() {
+    const pr = 12; // approximate player radius
+    for (let i = 0; i < this.enemyPool.active.length; i++) {
+      const e = this.enemyPool.active[i];
+      if (!e.alive) continue;
+      const dx = this.player.pos.x - e.pos.x;
+      const dy = this.player.pos.y - e.pos.y;
+      const dist = Math.hypot(dx, dy);
+      const minDist = pr + e.radius;
+      if (dist > 0 && dist < minDist) {
+        const overlap = (minDist - dist) + 0.01;
+        const ux = dx / dist, uy = dy / dist;
+        // Push the ENEMY away from the player (player remains authoritative wrt terrain)
+        const pushEnemyX = -ux * overlap;
+        const pushEnemyY = -uy * overlap;
+        if (typeof e.pushBy === 'function') {
+          e.pushBy(pushEnemyX, pushEnemyY, this.obstacleGrid);
+        } else {
+          e.pos.x += pushEnemyX; e.pos.y += pushEnemyY; e.rect.setPosition(e.pos.x, e.pos.y);
+        }
+      }
     }
   }
 

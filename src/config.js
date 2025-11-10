@@ -66,6 +66,7 @@ export const ENEMIES = {
   spawnRadiusMax: 900,
   maxActive: 600,
   spawnPerSecond: 1.5,
+  spawnTimeMs: 500,
 };
 
 export const PROJECTILES = {
