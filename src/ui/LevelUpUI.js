@@ -49,7 +49,11 @@ export class LevelUpUI {
 
   _makeCard(cx, cy, w, h, upgrade, index) {
     const root = this.scene.add.container(cx, cy);
-    const color = upgrade ? (upgrade.tier === 'rare' ? 0x2f9e44 : upgrade.tier === 'uncommon' ? 0x4dabf7 : 0xffffff) : 0x888888;
+    const color = upgrade ? (
+      upgrade.tier === 'ultra' ? 0xff6b6b :
+      upgrade.tier === 'super' ? 0x2f9e44 :
+      upgrade.tier === 'rare'  ? 0x4dabf7 : 0xffffff
+    ) : 0x888888;
     const rect = this.scene.add.rectangle(0, 0, w, h, 0x20252a, 0.95).setStrokeStyle(2, color, 0.9);
     rect.setInteractive({ useHandCursor: !!upgrade });
     const label = this.scene.add.text(0, -h*0.36, upgrade ? upgrade.tier.toUpperCase() : '-', { fontFamily:'monospace', fontSize: 12, color:'#aaaaaa' }).setOrigin(0.5);
@@ -88,7 +92,11 @@ export class LevelUpUI {
     for (let i = 0; i < this.cards.length; i++) {
       const c = this.cards[i];
       const upg = choices[i];
-      const color = upg ? (upg.tier === 'rare' ? 0x2f9e44 : upg.tier === 'uncommon' ? 0x4dabf7 : 0xffffff) : 0x888888;
+      const color = upg ? (
+        upg.tier === 'ultra' ? 0xff6b6b :
+        upg.tier === 'super' ? 0x2f9e44 :
+        upg.tier === 'rare'  ? 0x4dabf7 : 0xffffff
+      ) : 0x888888;
       c.rect.setStrokeStyle(2, color, 0.9);
       c.label.setText(upg ? upg.tier.toUpperCase() : '-');
       c.text.setText(upg ? upg.text : '—');

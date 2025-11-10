@@ -1,3 +1,4 @@
+import Phaser from 'phaser';
 import { ENEMIES } from "../config.js";
 import { Enemy } from "../entities/Enemy.js";
 

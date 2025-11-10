@@ -70,7 +70,7 @@ export const ENEMIES = {
 
 export const PROJECTILES = {
   color: 0x00e5ff, // bright cyan
-  radius: 6,
+  radius: 4,
   maxPool: 300,
 };
 
