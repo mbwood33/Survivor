@@ -1,39 +1,47 @@
 import { RNG } from "../utils/RNG.js";
 
-export const RarityWeights = { common: 70, uncommon: 25, rare: 5 };
+// Four-tier rarity system
+export const RarityWeights = { common: 68, rare: 24, super: 7, ultra: 1 };
 
 export const Upgrades = [
   // Common
   { id:'dmg1',  tier:'common',  text:'+15% Damage (Mult)', apply:s=>s.damage*=1.15, lanes:['damage'] },
-  { id:'atk1',  tier:'common',  text:'+15% Attack Speed', apply:s=>s.attackSpeed+=0.15, lanes:['attackSpeed'] },
+  { id:'atk1',  tier:'common',  text:'+15% Attack Speed',  apply:s=>s.attackSpeed+=0.15, lanes:['attackSpeed'] },
   { id:'spd1',  tier:'common',  text:'+20% Projectile Speed', apply:s=>s.projectileSpeed*=1.20, lanes:['projectileSpeed'] },
-  { id:'amt1',  tier:'common',  text:'+1 Projectile',     apply:s=>s.projectileAmount+=1, lanes:['projectileAmount'] },
-  { id:'psz1',  tier:'common',  text:'+15% Projectile Size', apply:s=>s.projSize*=1.15, lanes:['projSize'] },
-  { id:'dur1',  tier:'common',  text:'+15% Duration',     apply:s=>s.duration*=1.15, lanes:['duration'] },
-  { id:'mag1',  tier:'common',  text:'+25% Magnet',       apply:s=>s.magnet*=1.25, lanes:['magnet'] },
-  { id:'ms1',   tier:'common',  text:'+15% Move Speed',   apply:s=>s.moveSpeed*=1.15, lanes:['moveSpeed'] },
-
-  // Uncommon
-  { id:'dmg2',  tier:'uncommon', text:'+25% Damage (Mult)', apply:s=>s.damage*=1.25, lanes:['damage'] },
-  { id:'atk2',  tier:'uncommon', text:'+25% Attack Speed', apply:s=>s.attackSpeed+=0.25, lanes:['attackSpeed'] },
-  { id:'pier1', tier:'uncommon', text:'+1 Pierce',         apply:s=>s.pierce+=1, lanes:['pierce'] },
-  { id:'crit1', tier:'uncommon', text:'+8% Crit Chance',   apply:s=>s.critChance+=0.08, lanes:['critChance'] },
-  { id:'bdmg1', tier:'uncommon', text:'+1 Base Damage',    apply:s=>s.baseDamageAdd+=1, lanes:['baseDamage'] },
-  { id:'ms2',   tier:'uncommon', text:'+25% Move Speed',   apply:s=>s.moveSpeed*=1.25, lanes:['moveSpeed'] },
+  { id:'amt1',  tier:'common',  text:'+1 Projectile',      apply:s=>s.projectileAmount+=1, lanes:['projectileAmount'] },
+  { id:'psz1',  tier:'common',  text:'+8% Projectile Size', apply:s=>s.projSize*=1.08, lanes:['projSize'] },
+  { id:'dur1',  tier:'common',  text:'+15% Duration',      apply:s=>s.duration*=1.15, lanes:['duration'] },
+  { id:'mag1',  tier:'common',  text:'+25% Magnet',        apply:s=>s.magnet*=1.25, lanes:['magnet'] },
+  { id:'ms1',   tier:'common',  text:'+15% Move Speed',    apply:s=>s.moveSpeed*=1.15, lanes:['moveSpeed'] },
 
   // Rare
-  { id:'amt2',  tier:'rare', text:'+2 Projectiles',        apply:s=>s.projectileAmount+=2, lanes:['projectileAmount'] },
-  { id:'dmg3',  tier:'rare', text:'+40% Damage (Mult)',    apply:s=>s.damage*=1.40, lanes:['damage'] },
-  { id:'atk3',  tier:'rare', text:'+40% Attack Speed',     apply:s=>s.attackSpeed+=0.40, lanes:['attackSpeed'] },
-  { id:'crit2', tier:'rare', text:'+15% Crit Chance',      apply:s=>s.critChance+=0.15, lanes:['critChance'] },
-  { id:'bdmg2', tier:'rare', text:'+2 Base Damage',        apply:s=>s.baseDamageAdd+=2, lanes:['baseDamage'] },
-  { id:'ms3',   tier:'rare', text:'+40% Move Speed',       apply:s=>s.moveSpeed*=1.40, lanes:['moveSpeed'] },
+  { id:'dmg2',  tier:'rare',    text:'+25% Damage (Mult)', apply:s=>s.damage*=1.25, lanes:['damage'] },
+  { id:'atk2',  tier:'rare',    text:'+25% Attack Speed',  apply:s=>s.attackSpeed+=0.25, lanes:['attackSpeed'] },
+  { id:'pier1', tier:'rare',    text:'+1 Pierce',          apply:s=>s.pierce+=1, lanes:['pierce'] },
+  { id:'crit1', tier:'rare',    text:'+8% Crit Chance',    apply:s=>s.critChance+=0.08, lanes:['critChance'] },
+  { id:'bdmg1', tier:'rare',    text:'+1 Base Damage',     apply:s=>s.baseDamageAdd+=1, lanes:['baseDamage'] },
+  { id:'heal1', tier:'rare',    text:'Heal 20% HP',        kind:'heal', healPct:0.20, lanes:['heal'] },
+  { id:'ms2',   tier:'rare',    text:'+25% Move Speed',    apply:s=>s.moveSpeed*=1.25, lanes:['moveSpeed'] },
+
+  // Super Rare
+  { id:'amt2',  tier:'super',   text:'+2 Projectiles',     apply:s=>s.projectileAmount+=2, lanes:['projectileAmount'] },
+  { id:'dmg3',  tier:'super',   text:'+40% Damage (Mult)', apply:s=>s.damage*=1.40, lanes:['damage'] },
+  { id:'atk3',  tier:'super',   text:'+40% Attack Speed',  apply:s=>s.attackSpeed+=0.40, lanes:['attackSpeed'] },
+  { id:'crit2', tier:'super',   text:'+15% Crit Chance',   apply:s=>s.critChance+=0.15, lanes:['critChance'] },
+  { id:'bdmg2', tier:'super',   text:'+2 Base Damage',     apply:s=>s.baseDamageAdd+=2, lanes:['baseDamage'] },
+  { id:'heal2', tier:'super',   text:'Heal 35% HP',        kind:'heal', healPct:0.35, lanes:['heal'] },
+
+  // Ultra Rare
+  { id:'dmg4',  tier:'ultra',   text:'+60% Damage (Mult)', apply:s=>s.damage*=1.60, lanes:['damage'] },
+  { id:'atk4',  tier:'ultra',   text:'+60% Attack Speed',  apply:s=>s.attackSpeed+=0.60, lanes:['attackSpeed'] },
+  { id:'bdmg3', tier:'ultra',   text:'+3 Base Damage',     apply:s=>s.baseDamageAdd+=3, lanes:['baseDamage'] },
+  { id:'heal3', tier:'ultra',   text:'Heal 50% HP',        kind:'heal', healPct:0.50, lanes:['heal'] },
 ];
 
 export const UpgradeCaps = {
-  damage: 10, baseDamage: 8, attackSpeed: 10, projSize: 10, duration: 10,
-  projectileSpeed: 10, magnet: 8, projectileAmount: 9,
-  pierce: 6, critChance: 8, moveSpeed: 8,
+  damage: 20, baseDamage: 12, attackSpeed: 20, projSize: 12, duration: 20,
+  projectileSpeed: 20, magnet: 12, projectileAmount: 12,
+  pierce: 10, critChance: 12, moveSpeed: 12,
 };
 
 export function createLaneCounters() {
@@ -65,7 +73,7 @@ export function pickDraft(rng, counters, count = 3) {
   const usedLanes = new Set();
   const allowedAll = Upgrades.filter(u => isAllowed(u, counters));
   const tryPick = () => {
-    // roll tier, then pick avoiding duplicate ids and lanes
+    // roll tier, then pick avoiding duplicate ids and lanes; small bias to include heal early
     let tier = weightedPick(RarityWeights, rng);
     let bucket = Upgrades.filter(u => u.tier === tier && isAllowed(u, counters));
     if (bucket.length === 0) bucket = allowedAll;

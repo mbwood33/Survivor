@@ -384,17 +384,17 @@ export class GameScene extends Phaser.Scene {
         const dx = e.pos.x - p.x, dy = e.pos.y - p.y;
         const rr = r + e.radius;
         if (dx * dx + dy * dy <= rr * rr) {
-          // Apply crit and damage
-          let dmg = this.projectiles.damage[id];
+          // Apply crit and damage (single roll, shared by damage + visuals)
           const cc = this.projectiles.critChance[id] || 0;
           const cm = this.projectiles.critMult[id] || 2;
-          if (Math.random() < cc) dmg *= cm;
+          const roll = Math.random();
+          const isCrit = roll < cc;
+          let dmg = this.projectiles.damage[id] * (isCrit ? cm : 1);
           // Clamp to max single-hit damage
           dmg = Math.min(999, Math.max(0, dmg));
           const dead = e.hit(dmg);
           if (dead) this._killEnemy(e);
           // Hit feedback: small particle burst + sprite-based damage numbers
-          const isCrit = (cc > 0 && Math.random() < cc);
           this._spawnHitParticles(p.x, p.y, isCrit);
           this._damageNumber(p.x, p.y - 10, Math.round(dmg), isCrit);
           hitThisFrame.add(e);
@@ -475,33 +475,62 @@ export class GameScene extends Phaser.Scene {
     this.tweens.add({ targets: t, y: y - 16, alpha: 0, duration: 600, ease: 'cubic.out', onComplete: () => t.destroy() });
   }
 
-  _damageNumber(x, y, value, isCrit = false, isPlayer = false) {
+  _damageNumber(x, y, value, isCrit = false, isPlayer = false, isHeal = false) {
     // If spritesheet missing, fallback to text
     if (!this.textures.exists('bignums')) { this._floatText(x, y, String(value), isCrit ? 0xfff275 : 0xffffff); return; }
     const str = String(Math.max(0, value|0));
     const container = this.add.container(x, y).setDepth(1200);
-    const scale = 0.6; // adjust for 640x360 virtual res
+    const scale = isCrit ? 0.7 : 0.6; // crits are slightly larger
     const digitW = 17 * scale;
     const totalW = str.length * digitW;
+    const digits = [];
     for (let i = 0; i < str.length; i++) {
       const d = str.charCodeAt(i) - 48; // '0' -> 0
-      const row = isPlayer ? 2 : (isCrit ? 1 : 0);
+      const row = isHeal ? 3 : (isPlayer ? 2 : (isCrit ? 1 : 0));
       const frame = row * 10 + Phaser.Math.Clamp(d, 0, 9);
       const spr = this.add.image(-totalW/2 + i * digitW + digitW/2, 0, 'bignums', frame).setOrigin(0.5);
       spr.setScale(scale);
       spr.setBlendMode(Phaser.BlendModes.ADD);
       container.add(spr);
+      digits.push(spr);
     }
-    // Float up + fade + slight scale down
-    this.tweens.add({
+    // Normal + player damage: shrink a bit more; Crits: pulse then shrink; Heals: wavy digits as it floats
+    const duration = 700;
+    const endScale = isCrit ? 0.95 : 0.85;
+    const floatTween = this.tweens.add({
       targets: container,
       y: y - 20,
       alpha: 0,
-      scale: 0.9,
-      duration: 650,
+      scale: endScale,
+      duration,
       ease: 'cubic.out',
+      onUpdate: (tw, t) => {
+        if (isHeal) {
+          const prog = tw.progress; // 0..1
+          // Wave: each digit oscillates vertically
+          for (let i = 0; i < digits.length; i++) {
+            const phase = prog * Math.PI * 4 + i * 0.6;
+            digits[i].y = Math.sin(phase) * 2;
+          }
+        }
+      },
       onComplete: () => container.destroy(),
     });
+    if (isCrit) {
+      // Quick pulse and color strobe for crits
+      this.tweens.add({ targets: container, scaleX: scale*1.1, scaleY: scale*1.1, yoyo: true, duration: 120, repeat: 1 });
+      this.tweens.addCounter({
+        from: 0, to: 1, duration: 300, yoyo: true, repeat: 1,
+        onUpdate: (tw) => {
+          const v = tw.getValue();
+          const c1 = Phaser.Display.Color.ValueToColor(0xfff275);
+          const c2 = Phaser.Display.Color.ValueToColor(0xffffff);
+          const c = Phaser.Display.Color.Interpolate.ColorWithColor(c1, c2, 1, v);
+          const tint = Phaser.Display.Color.GetColor(c.r, c.g, c.b);
+          digits.forEach(s => s.setTint(tint));
+        }
+      });
+    }
   }
 
   _showEndBanner(text) {
@@ -668,16 +697,25 @@ export class GameScene extends Phaser.Scene {
     let finalChoices = choices;
     if (!choices || choices.length === 0) {
       finalChoices = [
-        { id:'heal30', tier:'common', text:'Heal 30% HP', lanes:[], apply: () => { this.player.hp = Math.min(this.player.hpMax, this.player.hp + this.player.hpMax * 0.3); } },
+        { id:'heal30', kind:'heal', tier:'rare', text:'Heal 30% HP', lanes:['heal'], healPct:0.30 },
         { id:'reroll1', tier:'common', text:'+1 Reroll', lanes:[], apply: () => { this.rerollsLeft++; } },
-        { id:'heal10', tier:'common', text:'Heal 10% HP', lanes:[], apply: () => { this.player.hp = Math.min(this.player.hpMax, this.player.hp + this.player.hpMax * 0.1); } },
+        { id:'heal10', kind:'heal', tier:'rare', text:'Heal 10% HP', lanes:['heal'], healPct:0.10 },
       ];
     }
     this.levelUpUI = new LevelUpUI(this, {
       choices: finalChoices,
       onChoose: (upg) => {
-        // Apply upgrade to player stats
-        upg.apply(this.player.stats);
+        // Handle heal-type cards immediately
+        if (upg && upg.kind === 'heal' && upg.healPct) {
+          const before = this.player.hp;
+          this.player.hp = Math.min(this.player.hpMax, this.player.hp + this.player.hpMax * upg.healPct);
+          const healed = Math.max(0, Math.round(this.player.hp - before));
+          if (healed > 0) this._damageNumber(this.player.pos.x, this.player.pos.y - 14, healed, false, false /*isPlayer*/ , true);
+        }
+        // Apply stat upgrades if present
+        if (typeof upg.apply === 'function') {
+          upg.apply(this.player.stats);
+        }
         for (const lane of (upg.lanes || [])) this.player.statsCounters[lane]++;
         this._closeLevelUpDraft();
       },
@@ -687,9 +725,9 @@ export class GameScene extends Phaser.Scene {
         let newChoices = pickDraft(this.draftRng, this.player.statsCounters, 3);
         if (!newChoices || newChoices.length === 0) {
           newChoices = [
-            { id:'heal30', tier:'common', text:'Heal 30% HP', lanes:[], apply: () => { this.player.hp = Math.min(this.player.hpMax, this.player.hp + this.player.hpMax * 0.3); } },
+            { id:'heal30', kind:'heal', tier:'rare', text:'Heal 30% HP', lanes:['heal'], healPct:0.30 },
             { id:'reroll1', tier:'common', text:'+1 Reroll', lanes:[], apply: () => { this.rerollsLeft++; } },
-            { id:'heal10', tier:'common', text:'Heal 10% HP', lanes:[], apply: () => { this.player.hp = Math.min(this.player.hpMax, this.player.hp + this.player.hpMax * 0.1); } },
+            { id:'heal10', kind:'heal', tier:'rare', text:'Heal 10% HP', lanes:['heal'], healPct:0.10 },
           ];
         }
         this.levelUpUI.updateChoices(newChoices);
