@@ -485,7 +485,7 @@ export class GameScene extends Phaser.Scene {
     if (!this.textures.exists('bignums')) { this._floatText(x, y, String(value), isCrit ? 0xfff275 : 0xffffff); return; }
     const str = String(Math.max(0, value|0));
     const container = this.add.container(x, y).setDepth(1200);
-    const scale = isCrit ? 0.7 : 0.6; // crits are slightly larger
+    const scale = isCrit ? 0.8 : 0.6; // crits are slightly larger
     const digitW = 17 * scale;
     const totalW = str.length * digitW;
     const digits = [];
@@ -500,22 +500,26 @@ export class GameScene extends Phaser.Scene {
       digits.push(spr);
     }
     // Normal + player damage: shrink a bit more; Crits: pulse then shrink; Heals: wavy digits as it floats
-    const duration = 700;
-    const endScale = isCrit ? 0.95 : 0.85;
+    const duration = 900;
+    const endScale = isCrit ? 0.92 : 0.82;
     const floatTween = this.tweens.add({
       targets: container,
-      y: y - 20,
-      alpha: 0,
+      y: y - 24,
+      alpha: 1, // we'll drive alpha manually below for a longer opaque hold
       scale: endScale,
       duration,
       ease: 'cubic.out',
       onUpdate: (tw, t) => {
+        // keep opaque for the first ~30% of the life, then fade out
+        const prog = tw.progress; // 0..1
+        const fadeStart = 0.3;
+        container.alpha = prog < fadeStart ? 1 : 1 - Math.min(1, (prog - fadeStart) / (1 - fadeStart));
         if (isHeal) {
           const prog = tw.progress; // 0..1
           // Wave: each digit oscillates vertically
           for (let i = 0; i < digits.length; i++) {
-            const phase = prog * Math.PI * 4 + i * 0.6;
-            digits[i].y = Math.sin(phase) * 2;
+            const phase = prog * Math.PI * 6 + i * 0.8; // higher frequency
+            digits[i].y = Math.sin(phase) * 4;          // larger amplitude
           }
         }
       },
@@ -523,9 +527,9 @@ export class GameScene extends Phaser.Scene {
     });
     if (isCrit) {
       // Quick pulse and color strobe for crits
-      this.tweens.add({ targets: container, scaleX: scale*1.1, scaleY: scale*1.1, yoyo: true, duration: 120, repeat: 1 });
+      this.tweens.add({ targets: container, scaleX: scale*1.2, scaleY: scale*1.2, yoyo: true, duration: 140, repeat: 1 });
       this.tweens.addCounter({
-        from: 0, to: 1, duration: 300, yoyo: true, repeat: 1,
+        from: 0, to: 1, duration: 360, yoyo: true, repeat: 1,
         onUpdate: (tw) => {
           const v = tw.getValue();
           const c1 = Phaser.Display.Color.ValueToColor(0xfff275);

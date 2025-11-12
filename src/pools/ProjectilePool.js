@@ -25,7 +25,9 @@ export class ProjectilePool {
     this.sprites = new Array(PROJECTILES.maxPool);
 
     for (let i = 0; i < PROJECTILES.maxPool; i++) {
-      const s = scene.add.circle(0, 0, PROJECTILES.radius, PROJECTILES.color);
+      const len = Math.max(8, PROJECTILES.radius * 3);
+      const thick = Math.max(2, Math.round(PROJECTILES.radius));
+      const s = scene.add.rectangle(0, 0, len, thick, PROJECTILES.color).setOrigin(0.5);
       s.setVisible(false);
       s.setDepth(6);
       this.sprites[i] = s;
@@ -49,9 +51,12 @@ export class ProjectilePool {
     this.travel[id] = 0;
     const pierce = options.pierce || 0;
     this.hitsLeft[id] = 1 + Math.max(0, pierce|0);
-    this.sprites[id].setPosition(x, y);
-    if (typeof this.sprites[id].setRadius === 'function') this.sprites[id].setRadius(radius);
-    this.sprites[id].setVisible(true);
+    const spr = this.sprites[id];
+    spr.setPosition(x, y);
+    const len = Math.max(8, Math.round(radius * 3));
+    const thick = Math.max(2, Math.round(radius));
+    spr.width = len; spr.height = thick;
+    spr.setVisible(true);
     this.countActive++;
     return id;
   }
@@ -103,7 +108,13 @@ export class ProjectilePool {
       if (p.x < -64 || p.y < -64 || p.x > WORLD.width + 64 || p.y > WORLD.height + 64) {
         this.despawn(id); continue;
       }
-      this.sprites[id].setPosition(p.x, p.y);
+      const spr = this.sprites[id];
+      spr.setPosition(p.x, p.y);
+      spr.rotation = Math.atan2(v.y, v.x);
+      // keep rectangle dimensions in sync with size
+      const len = Math.max(8, Math.round(this.radius[id] * 3));
+      const thick = Math.max(2, Math.round(this.radius[id]));
+      spr.width = len; spr.height = thick;
     }
   }
 }
