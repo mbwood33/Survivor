@@ -3,7 +3,7 @@ import { GAME, WORLD, INPUT, OBSTACLES, ENEMIES, PLAYER, PROJECTILES } from "../
 import { PlayerController } from "../entities/Player.js";
 import { SpatialGrid } from "../systems/SpatialGrid.js";
 import { RNG } from "../utils/RNG.js";
-import { clamp, vec2, vec2Normalize } from "../utils/MathUtil.js";
+import { clamp, vec2, vec2Normalize, aabbIntersects, aabbOverlapX, aabbOverlapY } from "../utils/MathUtil.js";
 import { EnemyPool } from "../pools/EnemyPool.js";
 import { ProjectilePool } from "../pools/ProjectilePool.js";
 import { XPOrbPool } from "../pools/XPOrbPool.js";
@@ -48,6 +48,9 @@ export class GameScene extends Phaser.Scene {
     // Player contact damage cooldown (interval between ticks when touching enemies)
     this.playerContactInterval = 0.35; // seconds between damage ticks
     this.playerContactTimer = 0;
+
+    // Track whether player is currently providing directional input
+    this._hasMoveInput = false;
   }
 
   create() {
@@ -273,6 +276,7 @@ export class GameScene extends Phaser.Scene {
 
     // Normalize
     const len = Math.hypot(x, y);
+    this._hasMoveInput = len > 0.0001;
     if (len > 0) { x /= len; y /= len; }
     return { x, y };
   }
@@ -865,21 +869,29 @@ export class GameScene extends Phaser.Scene {
     const pr = 12; // approximate player radius
     for (let i = 0; i < this.enemyPool.active.length; i++) {
       const e = this.enemyPool.active[i];
-      if (!e.alive) continue;
-      const dx = this.player.pos.x - e.pos.x;
-      const dy = this.player.pos.y - e.pos.y;
-      const dist = Math.hypot(dx, dy);
-      const minDist = pr + e.radius;
-      if (dist > 0 && dist < minDist) {
-        const overlap = (minDist - dist) + 0.01;
-        const ux = dx / dist, uy = dy / dist;
-        // Push the ENEMY away from the player (player remains authoritative wrt terrain)
-        const pushEnemyX = -ux * overlap;
-        const pushEnemyY = -uy * overlap;
-        if (typeof e.pushBy === 'function') {
-          e.pushBy(pushEnemyX, pushEnemyY, this.obstacleGrid);
+      if (!e.alive || e.isSpawning) continue;
+      // Use AABB contact to ensure no overlap between bodies
+      const pa = this.player.getAabb();
+      const er = e.radius;
+      const ea = { x: e.pos.x - er, y: e.pos.y - er, w: er * 2, h: er * 2 };
+      if (aabbIntersects(pa, ea)) {
+        // Stop enemy motion on contact
+        e.vel.x = 0; e.vel.y = 0;
+        const mtvX = aabbOverlapX(pa, ea);
+        const mtvY = aabbOverlapY(pa, ea);
+        // Resolve along the smallest axis by splitting resolution between player and enemy
+        if (Math.abs(mtvX) < Math.abs(mtvY)) {
+          const half = mtvX * 0.5;
+          // Move player by half (respecting terrain)
+          this.player.resolveCollisions(this.obstacleGrid, this.obstacles, half, 0);
+          // Move enemy by the other half (respecting terrain)
+          if (typeof e.pushBy === 'function') e.pushBy(-half, 0, this.obstacleGrid);
+          this.player.vel.x = 0; this.player.vel.y = 0;
         } else {
-          e.pos.x += pushEnemyX; e.pos.y += pushEnemyY; e.rect.setPosition(e.pos.x, e.pos.y);
+          const half = mtvY * 0.5;
+          this.player.resolveCollisions(this.obstacleGrid, this.obstacles, 0, half);
+          if (typeof e.pushBy === 'function') e.pushBy(0, -half, this.obstacleGrid);
+          this.player.vel.x = 0; this.player.vel.y = 0;
         }
       }
     }
