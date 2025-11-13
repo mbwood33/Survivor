@@ -164,6 +164,22 @@ export class GameScene extends Phaser.Scene {
     this.debugText = this.add.text(8, 40, "", { fontFamily: 'monospace', fontSize: 10, color: '#dddddd' })
       .setScrollFactor(0)
       .setDepth(1000);
+    
+    // Start background music: play once from 0, then loop from 11.7s
+    // Start BGM only after audio is unlocked
+    if (this.sound.locked) {
+      // Either use the UNLOCKED event:
+      this.sound.once(Phaser.Sound.Events.UNLOCKED, () => {
+        this._startBgm();
+      });
+
+      // OR a manual user gesture:
+      this.input.once('pointerdown', () => {
+        this._startBgm();
+      });
+    } else {
+      this._startBgm();
+    }
   }
 
   _createGridTexture() {
@@ -294,7 +310,8 @@ export class GameScene extends Phaser.Scene {
     if (Phaser.Input.Keyboard.JustDown(this.keys.ESC)) {
       this._pausedByUser = !this._pausedByUser;
       this.gamePaused = this._pausedByUser || this.levelUpActive;
-      if (this.gamePaused) this.tweens.pauseAll(); else this.tweens.resumeAll();
+      if (this.gamePaused) { this.tweens.pauseAll(); } else { this.tweens.resumeAll(); }
+      this._updateBgmVolume();
     }
     if (this.pad) {
       const startPressed = this.pad.buttons && this.pad.buttons[9] && this.pad.buttons[9].pressed;
@@ -433,6 +450,7 @@ export class GameScene extends Phaser.Scene {
     this.load.audio('sfx_xp1',   '/assets/sfx/SFX-005-XP-Orb-1.mp3');
     this.load.audio('sfx_xp2',   '/assets/sfx/SFX-005-XP-Orb-2.mp3');
     this.load.audio('sfx_xp3',   '/assets/sfx/SFX-005-XP-Orb-3.mp3');
+    this.load.audio('bgm-mall',  '/assets/music/YEAH.ogg');
   }
 
   _killEnemy(enemy) {
@@ -667,21 +685,40 @@ export class GameScene extends Phaser.Scene {
 
   _updateGameTimer(dt) {
     const prev = this.remainingTime;
-    this.remainingTime = Math.max(-600, this.remainingTime - dt); // allow negative for final swarm buildup
-    // Fire scheduled events when crossing thresholds
+    // Allow negative time for final swarm escalation window (up to 10 minutes)
+    this.remainingTime = Math.max(-600, this.remainingTime - dt);
+
+    // Helper to fire a one-shot event when crossing a threshold
     const ev = (tag, fn) => {
       if (this.eventsFired.has(tag)) return;
-      fn(); this.eventsFired.add(tag);
+      fn();
+      this.eventsFired.add(tag);
     };
-    // Use remainingTime thresholds (countdown)
-    if (prev > 480 && this.remainingTime <= 480) ev('swarm1', () => this._spawnSwarm(60));
-    if (prev > 300 && this.remainingTime <= 300) ev('boss1', () => this._spawnBoss());
-    if (prev > 180 && this.remainingTime <= 180) ev('swarm2', () => this._spawnSwarm(80));
-    if (prev > 90 && this.remainingTime <= 90) ev('portal', () => this._spawnPortal());
-    if (prev > 30 && this.remainingTime <= 30) ev('boss2', () => this._spawnBoss());
-    if (prev > 0 && this.remainingTime <= 0) ev('final_swarm', () => { this._finalSwarmStart = Date.now(); this._announce && this._announce('Final Swarm!'); });
 
-    // After time reaches 0, escalate spawns each minute
+    // Thresholds (countdown)
+    if (prev > 480 && this.remainingTime <= 480) {
+      ev('swarm1', () => this._spawnSwarm(60));
+    }
+    if (prev > 300 && this.remainingTime <= 300) {
+      ev('boss1', () => this._spawnBoss());
+    }
+    if (prev > 180 && this.remainingTime <= 180) {
+      ev('swarm2', () => this._spawnSwarm(80));
+    }
+    if (prev > 90 && this.remainingTime <= 90) {
+      ev('portal', () => this._spawnPortal());
+    }
+    if (prev > 30 && this.remainingTime <= 30) {
+      ev('boss2', () => this._spawnBoss());
+    }
+    if (prev > 0 && this.remainingTime <= 0) {
+      ev('final_swarm', () => {
+        this._finalSwarmStart = Date.now();
+        if (this._announce) this._announce('Final Swarm!');
+      });
+    }
+
+    // After time reaches 0, escalate swarms each minute
     if (this.remainingTime <= 0) {
       const minutesPast = Math.floor((-this.remainingTime) / 60);
       if (!this._lastFinalMinute || minutesPast > this._lastFinalMinute) {
@@ -698,9 +735,9 @@ export class GameScene extends Phaser.Scene {
 
   _announce(text) {
     if (!this._announceContainer) {
-      this._announceContainer = this.add.container(this.game.config.width/2, 24).setScrollFactor(0).setDepth(2500);
+      this._announceContainer = this.add.container(this.game.config.width / 2, 24).setScrollFactor(0).setDepth(2500);
     }
-    const t = this.add.text(0, 0, text, { fontFamily:'monospace', fontSize: 14, color:'#ffd166' }).setOrigin(0.5);
+    const t = this.add.text(0, 0, text, { fontFamily: 'monospace', fontSize: 14, color: '#ffd166' }).setOrigin(0.5);
     t.setStroke('#000000', 4);
     this._announceContainer.add(t);
     t.alpha = 0;
@@ -709,6 +746,35 @@ export class GameScene extends Phaser.Scene {
         this.tweens.add({ targets: t, alpha: 0, y: t.y - 8, duration: 350, onComplete: () => t.destroy() });
       });
     }});
+  }
+
+  _startBgm() {
+    /* try {
+      if (this.bgm) { this.bgm.destroy(); this.bgm = null; }
+      this.bgm = this.sound.add('bgm', { volume: 1.0 });
+      this.bgm.once('complete', () => {
+        if (this.bgm) {
+          this.bgm.play({ loop: true, seek: 11.7, volume: this._bgmTargetVolume || 1.0 });
+        }
+      });
+      this._bgmTargetVolume = 1.0;
+      this.bgm.play({ loop: false, seek: 0, volume: this._bgmTargetVolume });
+    } catch (e) {} */
+    
+    if (this.bgm && this.big.isPlaying) return;
+
+    this.bgm = this.sound.add('bgm-mall', {
+      loop: true,
+      volume: 0.4,
+    });
+
+    this.bgm.play();
+  }
+
+  _updateBgmVolume() {
+    const target = (this.gamePaused || this.levelUpActive) ? 0.5 : 1.0;
+    this._bgmTargetVolume = target;
+    if (this.bgm) this.bgm.setVolume(target);
   }
 
   _spawnBoss() {
@@ -739,6 +805,7 @@ export class GameScene extends Phaser.Scene {
     this.levelUpActive = true;
     this.gamePaused = true;
     this.tweens.pauseAll();
+    this._updateBgmVolume();
     const choices = pickDraft(this.draftRng, this.player.statsCounters, 3);
     // If no normal upgrades available, offer utility choices
     let finalChoices = choices;
@@ -788,6 +855,7 @@ export class GameScene extends Phaser.Scene {
     this.levelUpActive = false;
     this.gamePaused = this._pausedByUser; // resume if not user-paused
     if (!this.gamePaused) this.tweens.resumeAll();
+    this._updateBgmVolume();
     // If multiple level-ups queued, open next immediately
     if (this.pendingLevelUps > 0) { this.pendingLevelUps--; this._openLevelUpDraft(); }
   }
@@ -987,3 +1055,8 @@ export class GameScene extends Phaser.Scene {
     this._finalBossAlive = true;
   }
 }
+
+
+
+
+
