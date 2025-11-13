@@ -404,6 +404,9 @@ export class GameScene extends Phaser.Scene {
           // Hit feedback: small particle burst + sprite-based damage numbers
           this._spawnHitParticles(p.x, p.y, isCrit);
           this._damageNumber(p.x, p.y - 10, Math.round(dmg), isCrit);
+          // SFX: enemy hit (always) + crit overlay
+          this.sound.play('sfx_hit', { volume: 0.4 });
+          if (isCrit) this.sound.play('sfx_crit', { volume: 0.5 });
           hitThisFrame.add(e);
           remaining--;
           if (this.projectiles.hitsLeft) this.projectiles.hitsLeft[id] = remaining;
@@ -414,7 +417,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   preload() {
-    // Damage numbers spritesheet: 2 rows (0: white, 1: yellow crit), 10 columns (0-9)
+    // Damage numbers spritesheet: rows => 0 white, 1 yellow, 2 red, 3 cyan
     if (!this.textures.exists('bignums')) {
       this.load.spritesheet('bignums', 'assets/sprites/fonts/big-big-nums-1.png', {
         frameWidth: 17,
@@ -425,6 +428,11 @@ export class GameScene extends Phaser.Scene {
     this.load.audio('sfx_hoard', '/assets/sfx/SFX-000-Hoard-Spawn.mp3');
     this.load.audio('sfx_shoot', '/assets/sfx/SFX-001-Player-Projectile-01.mp3');
     this.load.audio('sfx_die',   '/assets/sfx/SFX-002-Enemy-Dies.mp3');
+    this.load.audio('sfx_hit',   '/assets/sfx/SFX-003-Enemy-Hit.mp3');
+    this.load.audio('sfx_crit',  '/assets/sfx/SFX-004-Crit-Hit.mp3');
+    this.load.audio('sfx_xp1',   '/assets/sfx/SFX-005-XP-Orb-1.mp3');
+    this.load.audio('sfx_xp2',   '/assets/sfx/SFX-005-XP-Orb-2.mp3');
+    this.load.audio('sfx_xp3',   '/assets/sfx/SFX-005-XP-Orb-3.mp3');
   }
 
   _killEnemy(enemy) {
@@ -621,8 +629,12 @@ export class GameScene extends Phaser.Scene {
       // Player auto-fire and projectile updates
       this.player.tryAutoFire(step, (x, y) => this._findNearestEnemy(x, y, 900), this.projectiles);
       this.projectiles.update(step, this.obstacleGrid);
-      // XP orbs update and pickups
-      this.xpOrbs.update(step, this.player, (value) => this.player.addXP(value));
+      // XP orbs update and pickups with tiered SFX
+      this.xpOrbs.update(step, this.player, (value) => {
+        const key = value >= 3 ? 'sfx_xp3' : (value === 2 ? 'sfx_xp2' : 'sfx_xp1');
+        this.sound.play(key, { volume: 0.35 });
+        this.player.addXP(value);
+      });
       // Collisions
       this._projectileEnemyCollisions();
       this._enemyContactDamage(step);
