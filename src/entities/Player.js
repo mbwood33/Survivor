@@ -172,7 +172,7 @@ export class PlayerController {
     // Aim determination
     const target = enemyQueryFn(this.pos.x, this.pos.y);
     let aim = this.lastAimDir;
-    if (target) {
+      if (target) {
       const dx = target.pos.x - this.pos.x;
       const dy = target.pos.y - this.pos.y;
       const len = Math.hypot(dx, dy);
@@ -207,7 +207,7 @@ export class PlayerController {
           { collidesTerrain: true, radius, critChance: resolved.critChance, critMult: resolved.critMult, pierce: resolved.pierce, maxDistance }
         );
       }
-    } else {
+      } else {
       // No target: emit evenly around the player; rotate phase each volley
       const step = (Math.PI * 2) / count;
       for (let i = 0; i < count; i++) {
@@ -223,9 +223,13 @@ export class PlayerController {
           { collidesTerrain: true, radius, critChance: resolved.critChance, critMult: resolved.critMult, pierce: resolved.pierce, maxDistance }
         );
       }
-      this.volleyPhase += 0.35;
+        this.volleyPhase += 0.35;
+      }
+      // Play shoot SFX once per volley (not per projectile)
+      if (this.scene && this.scene.sound) {
+        this.scene.sound.play('sfx_shoot', { volume: 0.3 });
+      }
     }
-  }
 
   addXP(value) {
     this.xp += value;

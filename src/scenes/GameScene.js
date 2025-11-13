@@ -51,6 +51,8 @@ export class GameScene extends Phaser.Scene {
 
     // Track whether player is currently providing directional input
     this._hasMoveInput = false;
+    // SFX gating to avoid stacks in the same moment
+    this._lastDieSfxAt = 0;
   }
 
   create() {
@@ -419,6 +421,10 @@ export class GameScene extends Phaser.Scene {
         frameHeight: 31,
       });
     }
+    // Audio SFX (served from public/ at /assets/...)
+    this.load.audio('sfx_hoard', '/assets/sfx/SFX-000-Hoard-Spawn.mp3');
+    this.load.audio('sfx_shoot', '/assets/sfx/SFX-001-Player-Projectile-01.mp3');
+    this.load.audio('sfx_die',   '/assets/sfx/SFX-002-Enemy-Dies.mp3');
   }
 
   _killEnemy(enemy) {
@@ -429,6 +435,23 @@ export class GameScene extends Phaser.Scene {
     // Drop multiple orbs if value is high
     while (value > 3) { this.xpOrbs.spawn(enemy.pos.x, enemy.pos.y, 3); value -= 3; }
     this.xpOrbs.spawn(enemy.pos.x, enemy.pos.y, Math.max(1, value));
+    // Play enemy die SFX with horizontal panning relative to screen center
+    const now = this.time.now || 0;
+    if (now - this._lastDieSfxAt > 50) {
+      const cam = this.cameras.main;
+      const view = cam.worldView;
+      const cx = view.x + view.width * 0.5;
+      let pan = 0;
+      if (enemy.pos.x < view.x) pan = -1;
+      else if (enemy.pos.x > view.x + view.width) pan = 1;
+      else pan = Phaser.Math.Clamp((enemy.pos.x - cx) / (view.width * 0.5), -1, 1);
+      const snd = this.sound.add('sfx_die');
+      snd.setVolume(0.7);
+      if (snd.setPan) snd.setPan(pan);
+      snd.once('complete', () => snd.destroy());
+      snd.play();
+      this._lastDieSfxAt = now;
+    }
     this.enemyPool.release(enemy);
     if (enemy.isFinal) {
       this._finalBossAlive = false;

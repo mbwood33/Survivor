@@ -2,6 +2,23 @@
 
 All notable changes to this project are documented here. This file starts with the first tracked version (v0.0.1). Earlier work is summarized in the Pre-VC section.
 
+## v0.0.3 - Audio, Visual, and Collision Refinements (2025-11-13)
+
+Audio
+- Hoard spawn SFX plays at the start of swarms (not the final swarm).
+- Player shoot SFX plays once per volley (does not stack with projectile count).
+- Enemy death SFX includes horizontal panning based on death X relative to camera center (hard pan off-screen; proportional on-screen) and is gated to avoid stacked triggers in the same frame.
+
+Visuals
+- Projectiles render as short, angled lines; thickness scales with projectile size upgrades.
+- XP orbs reworked as additive glow sprites with a gentle pulsing scale (light-orb feel).
+- Damage/heal numbers: longer opaque phase; crits have a stronger pulse and strobe; heals have a larger, higher-frequency wave.
+
+Collisions
+- Player/enemy bodies now resolve via AABB MTV split so neither can occupy the other’s collider.
+- Enemies stop moving when in contact; player is minimally corrected (respecting terrain) and cannot walk through enemies; contact damage ticks reliably.
+
+
 ## v0.0.2 - Player/Enemy Collision and Spawn Polish (2025-11-10)
 
 Collisions and Spawning
