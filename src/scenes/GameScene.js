@@ -165,16 +165,9 @@ export class GameScene extends Phaser.Scene {
       .setScrollFactor(0)
       .setDepth(1000);
     
-    // Start background music: play once from 0, then loop from 11.7s
     // Start BGM only after audio is unlocked
     if (this.sound.locked) {
-      // Either use the UNLOCKED event:
       this.sound.once(Phaser.Sound.Events.UNLOCKED, () => {
-        this._startBgm();
-      });
-
-      // OR a manual user gesture:
-      this.input.once('pointerdown', () => {
         this._startBgm();
       });
     } else {
@@ -310,8 +303,16 @@ export class GameScene extends Phaser.Scene {
     if (Phaser.Input.Keyboard.JustDown(this.keys.ESC)) {
       this._pausedByUser = !this._pausedByUser;
       this.gamePaused = this._pausedByUser || this.levelUpActive;
-      if (this.gamePaused) { this.tweens.pauseAll(); } else { this.tweens.resumeAll(); }
-      this._updateBgmVolume();
+
+      if (this.gamePaused) {
+        this.tweens.pauseAll();
+      } else {
+        this.tweens.resumeAll();
+      }
+      
+      // Quieter when paused/level-up, louder when active
+      this._bgmTargetVolume = (this.gamePaused || this.levelUpActive) ? 0.4 : 1.0;      
+      this._updateBgmVolume();  // dt ommited --> instant change
     }
     if (this.pad) {
       const startPressed = this.pad.buttons && this.pad.buttons[9] && this.pad.buttons[9].pressed;
@@ -450,7 +451,8 @@ export class GameScene extends Phaser.Scene {
     this.load.audio('sfx_xp1',   '/assets/sfx/SFX-005-XP-Orb-1.mp3');
     this.load.audio('sfx_xp2',   '/assets/sfx/SFX-005-XP-Orb-2.mp3');
     this.load.audio('sfx_xp3',   '/assets/sfx/SFX-005-XP-Orb-3.mp3');
-    this.load.audio('bgm-mall',  '/assets/music/YEAH.ogg');
+    this.load.audio('bgm',  '/assets/music/YEAH.ogg');
+    this.load.audio('bgm_loop', '/assets/music/YEAH-loop.ogg');
   }
 
   _killEnemy(enemy) {
@@ -674,6 +676,8 @@ export class GameScene extends Phaser.Scene {
       `Enemies: ${this.enemyPool.active.length}  Proj: ${this.projectiles.countActive}  Orbs: ${this.xpOrbs.countActive}  Diff: ${this.difficultyLevel}`,
     ];
     this.debugText.setText(lines.join('\n'));
+
+    this._updateBgmVolume();
   }
 
   _formatTime(t) {
@@ -749,32 +753,83 @@ export class GameScene extends Phaser.Scene {
   }
 
   _startBgm() {
-    /* try {
-      if (this.bgm) { this.bgm.destroy(); this.bgm = null; }
-      this.bgm = this.sound.add('bgm', { volume: 1.0 });
-      this.bgm.once('complete', () => {
-        if (this.bgm) {
-          this.bgm.play({ loop: true, seek: 11.7, volume: this._bgmTargetVolume || 1.0 });
-        }
-      });
-      this._bgmTargetVolume = 1.0;
-      this.bgm.play({ loop: false, seek: 0, volume: this._bgmTargetVolume });
-    } catch (e) {} */
-    
-    if (this.bgm && this.big.isPlaying) return;
+    /* 
+    this.bgm = this.sound.add('bgm', { volume: 1.0 });
+    this.bgm = this.sound.add('bgm_loop', { volume: 1.0 });
 
-    this.bgm = this.sound.add('bgm-mall', {
+    this.bgm.once('complete', () => {
+      if (this.bgm) {
+        this.bgm.play({ loop: true, seek: 11.7, volume: this._bgmTargetVolume || 1.0 });
+      }
+    });
+    this._bgmTargetVolume = 1.0;
+    this.bgm.play({ loop: false, seek: 0, volume: this._bgmTargetVolume });
+      
+    // if (this.bgm && this.big.isPlaying) return;
+
+    this.bgm = this.sound.add('bgm', {
       loop: true,
       volume: 0.4,
     });
 
     this.bgm.play();
+    */
+
+    // Don't restart if already running
+    if (this.bgmIntro?.isPlaying || this.bgmLoop?.isPlaying) return;
+
+    const vol = this._bgmTargetVolume ?? 1.0;
+
+    // Clean up any old instances
+    if (this.bgmIntro) {
+      this.bgmIntro.stop();
+      this.bgmIntro.destroy();
+    }
+    if (this.bgmLoop) {
+      this.bgmLoop.stop();
+      this.bgmLoop.destroy();
+    }
+
+    // Intro: plays once
+    this.bgmIntro = this.sound.add('bgm', {
+      loop: false,
+      volume: vol,
+    });
+
+    // Loop: will run forever after intro completes
+    this.bgmLoop = this.sound.add('bgm_loop', {
+      loop: true,
+      volume: vol,
+    });
+
+    // When intro finishes, start the loop track
+    this.bgmIntro.once('complete', () => {
+      if (!this.bgmLoop) return;
+      this.bgmLoop.play();  // Loop endlessly
+    });
+
+    // Start the intro track
+    this.bgmIntro.play();
   }
 
-  _updateBgmVolume() {
-    const target = (this.gamePaused || this.levelUpActive) ? 0.5 : 1.0;
-    this._bgmTargetVolume = target;
-    if (this.bgm) this.bgm.setVolume(target);
+  _updateBgmVolume(dt) {
+    if (!this.bgmIntro && !this.bgmLoop) return;
+
+    const current = this._bgmCurrentVolume ?? 0;
+    const target = this._bgmTargetVolume ?? 1.0;
+    const speed = 2.5;
+
+    // If dt is provided (from update loop), do a smooth lerp.
+    // If dt is missing (called from ESC/level-up), jump straight to target
+    const t = (typeof dt === 'number')
+      ? Math.min(1, speed * dt)
+      : 1;  // instant set
+
+    const next = current + (target - current) * t;
+    this._bgmCurrentVolume = next;
+
+    if (this.bgmIntro) this.bgmIntro.setVolume(next);
+    if (this.bgmLoop) this.bgmLoop.setVolume(next);
   }
 
   _spawnBoss() {
@@ -805,8 +860,12 @@ export class GameScene extends Phaser.Scene {
     this.levelUpActive = true;
     this.gamePaused = true;
     this.tweens.pauseAll();
+    
+    this._bgmTargetVolume = 0.4;  // dim for level-up UI
     this._updateBgmVolume();
+    
     const choices = pickDraft(this.draftRng, this.player.statsCounters, 3);
+
     // If no normal upgrades available, offer utility choices
     let finalChoices = choices;
     if (!choices || choices.length === 0) {
@@ -855,7 +914,10 @@ export class GameScene extends Phaser.Scene {
     this.levelUpActive = false;
     this.gamePaused = this._pausedByUser; // resume if not user-paused
     if (!this.gamePaused) this.tweens.resumeAll();
+    
+    this._bgmTargetVolume = (this.gamePaused || this.levelUpActive) ? 0.4 : 1.0;
     this._updateBgmVolume();
+    
     // If multiple level-ups queued, open next immediately
     if (this.pendingLevelUps > 0) { this.pendingLevelUps--; this._openLevelUpDraft(); }
   }
@@ -1055,6 +1117,8 @@ export class GameScene extends Phaser.Scene {
     this._finalBossAlive = true;
   }
 }
+
+
 
 
 

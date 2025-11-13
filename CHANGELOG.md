@@ -2,6 +2,9 @@
 
 All notable changes to this project are documented here. This file starts with the first tracked version (v0.0.1). Earlier work is summarized in the Pre-VC section.
 
+## v0.0.4 - Background music
+- Implemented looping background music
+
 ## v0.0.3 - Audio, Visual, and Collision Refinements (2025-11-13)
 
 Audio
