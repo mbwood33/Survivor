@@ -1,3 +1,7 @@
+// AABB ("axis-aligned bounding box"): Method used in video games for collision detection.
+// Checks if an enemy's rectangular "bounding box," which is aligned with the x and y axes,
+// overlaps with another object, like the player, to determine if they have collided.
+
 import { ENEMIES, WORLD } from "../config.js";
 import { clamp, aabbIntersects, aabbOverlapX, aabbOverlapY } from "../utils/MathUtil.js";
 
