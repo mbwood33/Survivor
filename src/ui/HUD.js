@@ -7,7 +7,7 @@ export class HUD {
     const gh = scene.game.config.height;
     this.container = scene.add.container(gw/2, gh - 8).setScrollFactor(0).setDepth(1000);
 
-    this.levelText = scene.add.text(-100, 0, "Lv 1", { fontFamily: "monospace", fontSize: 12, color: "#ffffff" }).setOrigin(1, 0.5);
+    this.levelText = scene.add.text(-100, 0, "Lv 1", { fontFamily: "monospace", fontSize: 12, color: "#000000" }).setOrigin(1, 0.5);
     this.container.add(this.levelText);
 
     const barW = 220; const barY = 0;

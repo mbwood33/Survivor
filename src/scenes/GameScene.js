@@ -116,17 +116,8 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    // Background grid texture (static)
-    this._createGridTexture();
-    const tilesX = Math.ceil(WORLD.width / 128);
-    const tilesY = Math.ceil(WORLD.height / 128);
-    for (let y = 0; y < tilesY; y++) {
-      for (let x = 0; x < tilesX; x++) {
-        const img = this.add.image(x * 128 + 64, y * 128 + 64, 'grid-128');
-        img.setDepth(0);
-        this.bgLayer.add(img);
-      }
-    }
+    // Background mall floor (static): patterned 32x32 tiles across the world
+    this._createMallFloorBackground();
 
     // Obstacles + grid
     this.obstacles = [];
@@ -172,6 +163,168 @@ export class GameScene extends Phaser.Scene {
       });
     } else {
       this._startBgm();
+    }
+  }
+
+  _createMallFloorTiles() {
+    if (this._mallFloorTileKeys && this._mallFloorTileKeys.length > 0) return;
+    const sheet = this.textures.get('mall-floor');
+    if (!sheet) return;
+    const source = sheet.getSourceImage();
+    const cols = Math.floor(source.width / 32);
+    const keys = [];
+    for (let i = 0; i < cols; i++) {
+      const key = `mall-floor-32-${i}`;
+      if (!this.textures.exists(key)) {
+        const tex = this.textures.createCanvas(key, 32, 32);
+        const ctx = tex.getContext();
+        ctx.clearRect(0, 0, 32, 32);
+        const sx = i * 32;
+        const sy = 0;
+        ctx.drawImage(source, sx, sy, 32, 32, 0, 0, 32, 32);
+        tex.refresh();
+      }
+      keys.push(key);
+    }
+    this._mallFloorTileKeys = keys;
+  }
+
+  _createMallFloorBackground() {
+    this._createMallFloorTiles();
+    const tileKeys = this._mallFloorTileKeys || [];
+    if (!tileKeys.length) return;
+
+    // Map tile indices: 0 = gray, 1 = tan, 2 = olive, 3 = brown
+    const TILE = { G: 0, T: 1, O: 2, B: 3 };
+
+    // Base gray tile index
+    const baseTile = TILE.G;
+
+    // Example patterns inspired by the provided layouts.
+    // Each pattern is a small 2D array of tile indices.
+    const patterns = [];
+
+    const p1 = [
+      'GGBOTTOBGG',
+      'GGBOTTOBGG',
+      'BBBOTTOBBB',
+      'OOOOTTOOOO',
+      'TTTTTTTTTT',
+      'TTTTTTTTTT',
+      'OOOOTTOOOO',
+      'BBBOTTOBBB',
+      'GGBGTTGBGG',
+      'GGBGTTGBGG',
+    ];
+    patterns.push(p1.map(row => row.split('').map(ch => TILE[ch])));
+
+    const p2 = [
+      'GGGGBBGGGG',
+      'GGGGBBGGGG',
+      'GGGGBBGGGG',
+      'GGGBOOBGGG',
+      'BBBOTTOBBB',
+      'BBBOTTOBBB',
+      'GGGBOOBGGG',
+      'GGGGBBGGGG',
+      'GGGGBBGGGG',
+      'GGGGBBGGGG',
+    ];
+    patterns.push(p2.map(row => row.split('').map(ch => TILE[ch])));
+
+    // A thinner stripe variant
+    const p3 = [
+      'GGGGTTGGGG',
+      'GGGGTTGGGG',
+      'GGBBTTBBGG',
+      'GGBBTTBBGG',
+      'OOOOTTOOOO',
+      'OOOOTTOOOO',
+      'GGBBTTBBGG',
+      'GGBBTTBBGG',
+      'GGGGTTGGGG',
+      'GGGGTTGGGG',
+    ];
+    patterns.push(p3.map(row => row.split('').map(ch => TILE[ch])));
+
+    // Build a coarse pattern map in tile space (32x32 tiles).
+    const tilesX = Math.ceil(WORLD.width / 32);
+    const tilesY = Math.ceil(WORLD.height / 32);
+    const patternMap = new Array(tilesY);
+    for (let y = 0; y < tilesY; y++) {
+      patternMap[y] = new Array(tilesX).fill(baseTile);
+    }
+
+    // Sprinkle pattern patches intermittently across the world.
+    const rng = new RNG((Date.now() ^ 0x1234abcd) | 0);
+    const patches = Math.floor((tilesX * tilesY) / 800); // density scaler
+    for (let n = 0; n < patches; n++) {
+      const pattern = patterns[n % patterns.length];
+      const ph = pattern.length;
+      const pw = pattern[0].length;
+      const maxX = Math.max(1, tilesX - pw);
+      const maxY = Math.max(1, tilesY - ph);
+      const startX = rng.int(0, maxX);
+      const startY = rng.int(0, maxY);
+      for (let py = 0; py < ph; py++) {
+        const row = pattern[py];
+        const ty = startY + py;
+        if (ty < 0 || ty >= tilesY) continue;
+        for (let px = 0; px < pw; px++) {
+          const tx = startX + px;
+          if (tx < 0 || tx >= tilesX) continue;
+          const value = row[px];
+          patternMap[ty][tx] = value;
+        }
+      }
+    }
+
+    // Add a little noise: rare non-gray singles to break up large gray areas.
+    for (let y = 0; y < tilesY; y++) {
+      for (let x = 0; x < tilesX; x++) {
+        if (patternMap[y][x] === baseTile && rng.next() < 0.02) {
+          const accent = 1 + Math.floor(rng.next() * 3); // T/O/B
+          patternMap[y][x] = accent;
+        }
+      }
+    }
+
+    // Build a small set of 128x128 chunk textures (4x4 tiles) sampled from the pattern map,
+    // then tile those across the world. This keeps draw calls low without creating thousands
+    // of render textures at once.
+    const chunkKeys = [];
+    const variants = 8;
+    for (let v = 0; v < variants; v++) {
+      const rt = this.make.renderTexture({ width: 128, height: 128, add: false });
+      const startX = rng.int(0, Math.max(0, tilesX - 4));
+      const startY = rng.int(0, Math.max(0, tilesY - 4));
+      for (let ty = 0; ty < 4; ty++) {
+        const gy = startY + ty;
+        if (gy >= tilesY) continue;
+        for (let tx = 0; tx < 4; tx++) {
+          const gx = startX + tx;
+          if (gx >= tilesX) continue;
+          const idx = patternMap[gy][gx] || baseTile;
+          const key = tileKeys[idx % tileKeys.length];
+          rt.draw(key, tx * 32 + 16, ty * 32 + 16);
+        }
+      }
+      const key = `mall-floor-128-${v}`;
+      rt.saveTexture(key);
+      rt.destroy();
+      chunkKeys.push(key);
+    }
+
+    const chunksX = Math.ceil(WORLD.width / 128);
+    const chunksY = Math.ceil(WORLD.height / 128);
+    for (let y = 0; y < chunksY; y++) {
+      for (let x = 0; x < chunksX; x++) {
+        const idx = (Math.random() * chunkKeys.length) | 0;
+        const key = chunkKeys[idx];
+        const img = this.add.image(x * 128 + 64, y * 128 + 64, key);
+        img.setDepth(0);
+        this.bgLayer.add(img);
+      }
     }
   }
 
@@ -440,6 +593,13 @@ export class GameScene extends Phaser.Scene {
       this.load.spritesheet('bignums', 'assets/sprites/fonts/big-big-nums-1.png', {
         frameWidth: 17,
         frameHeight: 31,
+      });
+    }
+    // Mall floor spritesheet: 32x32 frames, first row contains 16x16 floor tiles
+    if (!this.textures.exists('mall-floor')) {
+      this.load.spritesheet('mall-floor', '/assets/sprites/mall-sprites-32x32.png', {
+        frameWidth: 32,
+        frameHeight: 32,
       });
     }
     // Audio SFX (served from public/ at /assets/...)
