@@ -155,7 +155,7 @@ export class GameScene extends Phaser.Scene {
     this.debugText = this.add.text(8, 40, "", { fontFamily: 'monospace', fontSize: 10, color: '#dddddd' })
       .setScrollFactor(0)
       .setDepth(1000);
-    
+
     // Start BGM only after audio is unlocked
     if (this.sound.locked) {
       this.sound.once(Phaser.Sound.Events.UNLOCKED, () => {
@@ -213,8 +213,8 @@ export class GameScene extends Phaser.Scene {
       'TTTTTTTTTT',
       'OOOOTTOOOO',
       'BBBOTTOBBB',
-      'GGBGTTGBGG',
-      'GGBGTTGBGG',
+      'GGBOTTOBGG',
+      'GGBOTTOBGG',
     ];
     patterns.push(p1.map(row => row.split('').map(ch => TILE[ch])));
 
@@ -289,57 +289,50 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    // Build a small set of 128x128 chunk textures (4x4 tiles) sampled from the pattern map,
+    // Build a small set of 512x512 chunk textures (16x16 tiles) sampled from the pattern map,
     // then tile those across the world. This keeps draw calls low without creating thousands
     // of render textures at once.
     const chunkKeys = [];
     const variants = 8;
     for (let v = 0; v < variants; v++) {
-      const rt = this.make.renderTexture({ width: 128, height: 128, add: false });
-      const startX = rng.int(0, Math.max(0, tilesX - 4));
-      const startY = rng.int(0, Math.max(0, tilesY - 4));
-      for (let ty = 0; ty < 4; ty++) {
+      const rt = this.make.renderTexture({ width: 512, height: 512, add: false });
+      const startX = rng.int(0, Math.max(0, tilesX - 16));
+      const startY = rng.int(0, Math.max(0, tilesY - 16));
+      for (let ty = 0; ty < 16; ty++) {
         const gy = startY + ty;
         if (gy >= tilesY) continue;
-        for (let tx = 0; tx < 4; tx++) {
+        for (let tx = 0; tx < 16; tx++) {
           const gx = startX + tx;
           if (gx >= tilesX) continue;
           const idx = patternMap[gy][gx] || baseTile;
           const key = tileKeys[idx % tileKeys.length];
-          rt.draw(key, tx * 32 + 16, ty * 32 + 16);
+          // Draw with slight overlap (33x33) to prevent internal gaps
+          // We must use a temporary Game Object to draw with scale/rotation to a RenderTexture
+          const tileImg = this.make.image({ x: tx * 32 + 16, y: ty * 32 + 16, key, add: false });
+          tileImg.setScale(1.03125); // 33/32 ~= 1.03125
+          rt.draw(tileImg);
+          tileImg.destroy();
         }
       }
-      const key = `mall-floor-128-${v}`;
+      const key = `mall-floor-512-${v}`;
       rt.saveTexture(key);
       rt.destroy();
       chunkKeys.push(key);
     }
 
-    const chunksX = Math.ceil(WORLD.width / 128);
-    const chunksY = Math.ceil(WORLD.height / 128);
+    const chunksX = Math.ceil(WORLD.width / 512);
+    const chunksY = Math.ceil(WORLD.height / 512);
     for (let y = 0; y < chunksY; y++) {
       for (let x = 0; x < chunksX; x++) {
         const idx = (Math.random() * chunkKeys.length) | 0;
         const key = chunkKeys[idx];
-        const img = this.add.image(x * 128 + 64, y * 128 + 64, key);
+        const img = this.add.image(x * 512 + 256, y * 512 + 256, key);
+        // Scale up slightly to overlap neighbors (513/512 ~= 1.002)
+        img.setScale(1.002);
         img.setDepth(0);
         this.bgLayer.add(img);
       }
     }
-  }
-
-  _createGridTexture() {
-    const g = this.add.graphics();
-    g.clear();
-    g.fillStyle(0x202428, 1);
-    g.fillRect(0, 0, 128, 128);
-    g.lineStyle(1, 0x1a1d20, 1);
-    for (let i = 0; i <= 128; i += 32) {
-      g.lineBetween(i, 0, i, 128);
-      g.lineBetween(0, i, 128, i);
-    }
-    g.generateTexture('grid-128', 128, 128);
-    g.destroy();
   }
 
   _generateObstacles() {
@@ -462,9 +455,9 @@ export class GameScene extends Phaser.Scene {
       } else {
         this.tweens.resumeAll();
       }
-      
+
       // Quieter when paused/level-up, louder when active
-      this._bgmTargetVolume = (this.gamePaused || this.levelUpActive) ? 0.4 : 1.0;      
+      this._bgmTargetVolume = (this.gamePaused || this.levelUpActive) ? 0.4 : 1.0;
       this._updateBgmVolume();  // dt ommited --> instant change
     }
     if (this.pad) {
@@ -605,13 +598,13 @@ export class GameScene extends Phaser.Scene {
     // Audio SFX (served from public/ at /assets/...)
     this.load.audio('sfx_hoard', '/assets/sfx/SFX-000-Hoard-Spawn.mp3');
     this.load.audio('sfx_shoot', '/assets/sfx/SFX-001-Player-Projectile-01.mp3');
-    this.load.audio('sfx_die',   '/assets/sfx/SFX-002-Enemy-Dies.mp3');
-    this.load.audio('sfx_hit',   '/assets/sfx/SFX-003-Enemy-Hit.mp3');
-    this.load.audio('sfx_crit',  '/assets/sfx/SFX-004-Crit-Hit.mp3');
-    this.load.audio('sfx_xp1',   '/assets/sfx/SFX-005-XP-Orb-1.mp3');
-    this.load.audio('sfx_xp2',   '/assets/sfx/SFX-005-XP-Orb-2.mp3');
-    this.load.audio('sfx_xp3',   '/assets/sfx/SFX-005-XP-Orb-3.mp3');
-    this.load.audio('bgm',  '/assets/music/YEAH.ogg');
+    this.load.audio('sfx_die', '/assets/sfx/SFX-002-Enemy-Dies.mp3');
+    this.load.audio('sfx_hit', '/assets/sfx/SFX-003-Enemy-Hit.mp3');
+    this.load.audio('sfx_crit', '/assets/sfx/SFX-004-Crit-Hit.mp3');
+    this.load.audio('sfx_xp1', '/assets/sfx/SFX-005-XP-Orb-1.mp3');
+    this.load.audio('sfx_xp2', '/assets/sfx/SFX-005-XP-Orb-2.mp3');
+    this.load.audio('sfx_xp3', '/assets/sfx/SFX-005-XP-Orb-3.mp3');
+    this.load.audio('bgm', '/assets/music/YEAH.ogg');
     this.load.audio('bgm_loop', '/assets/music/YEAH-loop.ogg');
   }
 
@@ -686,7 +679,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   _floatText(x, y, text, color = 0xffffff) {
-    const t = this.add.text(x, y, text, { fontFamily:'monospace', fontSize: 10, color: '#ffffff' }).setOrigin(0.5).setDepth(1000);
+    const t = this.add.text(x, y, text, { fontFamily: 'monospace', fontSize: 10, color: '#ffffff' }).setOrigin(0.5).setDepth(1000);
     t.setTint(color);
     this.tweens.add({ targets: t, y: y - 16, alpha: 0, duration: 600, ease: 'cubic.out', onComplete: () => t.destroy() });
   }
@@ -694,7 +687,7 @@ export class GameScene extends Phaser.Scene {
   _damageNumber(x, y, value, isCrit = false, isPlayer = false, isHeal = false) {
     // If spritesheet missing, fallback to text
     if (!this.textures.exists('bignums')) { this._floatText(x, y, String(value), isCrit ? 0xfff275 : 0xffffff); return; }
-    const str = String(Math.max(0, value|0));
+    const str = String(Math.max(0, value | 0));
     const container = this.add.container(x, y).setDepth(1200);
     const scale = isCrit ? 0.8 : 0.6; // crits are slightly larger
     const digitW = 17 * scale;
@@ -704,7 +697,7 @@ export class GameScene extends Phaser.Scene {
       const d = str.charCodeAt(i) - 48; // '0' -> 0
       const row = isHeal ? 3 : (isPlayer ? 2 : (isCrit ? 1 : 0));
       const frame = row * 10 + Phaser.Math.Clamp(d, 0, 9);
-      const spr = this.add.image(-totalW/2 + i * digitW + digitW/2, 0, 'bignums', frame).setOrigin(0.5);
+      const spr = this.add.image(-totalW / 2 + i * digitW + digitW / 2, 0, 'bignums', frame).setOrigin(0.5);
       spr.setScale(scale);
       spr.setBlendMode(Phaser.BlendModes.ADD);
       container.add(spr);
@@ -738,7 +731,7 @@ export class GameScene extends Phaser.Scene {
     });
     if (isCrit) {
       // Quick pulse and color strobe for crits
-      this.tweens.add({ targets: container, scaleX: scale*1.2, scaleY: scale*1.2, yoyo: true, duration: 140, repeat: 1 });
+      this.tweens.add({ targets: container, scaleX: scale * 1.2, scaleY: scale * 1.2, yoyo: true, duration: 140, repeat: 1 });
       this.tweens.addCounter({
         from: 0, to: 1, duration: 360, yoyo: true, repeat: 1,
         onUpdate: (tw) => {
@@ -757,7 +750,7 @@ export class GameScene extends Phaser.Scene {
     const { width, height } = this.game.config;
     const c = this.add.container(0, 0).setScrollFactor(0).setDepth(3000);
     const bg = this.add.rectangle(0, 0, width, height, 0x000000, 0.7).setOrigin(0, 0);
-    const label = this.add.text(width/2, height/2, text, { fontFamily:'monospace', fontSize: 48, color:'#ffffff' }).setOrigin(0.5);
+    const label = this.add.text(width / 2, height / 2, text, { fontFamily: 'monospace', fontSize: 48, color: '#ffffff' }).setOrigin(0.5);
     c.add([bg, label]);
   }
 
@@ -905,18 +898,20 @@ export class GameScene extends Phaser.Scene {
     t.setStroke('#000000', 4);
     this._announceContainer.add(t);
     t.alpha = 0;
-    this.tweens.add({ targets: t, alpha: 1, duration: 150, yoyo: false, onComplete: () => {
-      this.time.delayedCall(1100, () => {
-        this.tweens.add({ targets: t, alpha: 0, y: t.y - 8, duration: 350, onComplete: () => t.destroy() });
-      });
-    }});
+    this.tweens.add({
+      targets: t, alpha: 1, duration: 150, yoyo: false, onComplete: () => {
+        this.time.delayedCall(1100, () => {
+          this.tweens.add({ targets: t, alpha: 0, y: t.y - 8, duration: 350, onComplete: () => t.destroy() });
+        });
+      }
+    });
   }
 
   _startBgm() {
     /* 
     this.bgm = this.sound.add('bgm', { volume: 1.0 });
     this.bgm = this.sound.add('bgm_loop', { volume: 1.0 });
-
+  
     this.bgm.once('complete', () => {
       if (this.bgm) {
         this.bgm.play({ loop: true, seek: 11.7, volume: this._bgmTargetVolume || 1.0 });
@@ -926,12 +921,12 @@ export class GameScene extends Phaser.Scene {
     this.bgm.play({ loop: false, seek: 0, volume: this._bgmTargetVolume });
       
     // if (this.bgm && this.big.isPlaying) return;
-
+  
     this.bgm = this.sound.add('bgm', {
       loop: true,
       volume: 0.4,
     });
-
+  
     this.bgm.play();
     */
 
@@ -1020,19 +1015,19 @@ export class GameScene extends Phaser.Scene {
     this.levelUpActive = true;
     this.gamePaused = true;
     this.tweens.pauseAll();
-    
+
     this._bgmTargetVolume = 0.4;  // dim for level-up UI
     this._updateBgmVolume();
-    
+
     const choices = pickDraft(this.draftRng, this.player.statsCounters, 3);
 
     // If no normal upgrades available, offer utility choices
     let finalChoices = choices;
     if (!choices || choices.length === 0) {
       finalChoices = [
-        { id:'heal30', kind:'heal', tier:'rare', text:'Heal 30% HP', lanes:['heal'], healPct:0.30 },
-        { id:'reroll1', tier:'common', text:'+1 Reroll', lanes:[], apply: () => { this.rerollsLeft++; } },
-        { id:'heal10', kind:'heal', tier:'rare', text:'Heal 10% HP', lanes:['heal'], healPct:0.10 },
+        { id: 'heal30', kind: 'heal', tier: 'rare', text: 'Heal 30% HP', lanes: ['heal'], healPct: 0.30 },
+        { id: 'reroll1', tier: 'common', text: '+1 Reroll', lanes: [], apply: () => { this.rerollsLeft++; } },
+        { id: 'heal10', kind: 'heal', tier: 'rare', text: 'Heal 10% HP', lanes: ['heal'], healPct: 0.10 },
       ];
     }
     this.levelUpUI = new LevelUpUI(this, {
@@ -1043,7 +1038,7 @@ export class GameScene extends Phaser.Scene {
           const before = this.player.hp;
           this.player.hp = Math.min(this.player.hpMax, this.player.hp + this.player.hpMax * upg.healPct);
           const healed = Math.max(0, Math.round(this.player.hp - before));
-          if (healed > 0) this._damageNumber(this.player.pos.x, this.player.pos.y - 14, healed, false, false /*isPlayer*/ , true);
+          if (healed > 0) this._damageNumber(this.player.pos.x, this.player.pos.y - 14, healed, false, false /*isPlayer*/, true);
         }
         // Apply stat upgrades if present
         if (typeof upg.apply === 'function') {
@@ -1058,9 +1053,9 @@ export class GameScene extends Phaser.Scene {
         let newChoices = pickDraft(this.draftRng, this.player.statsCounters, 3);
         if (!newChoices || newChoices.length === 0) {
           newChoices = [
-            { id:'heal30', kind:'heal', tier:'rare', text:'Heal 30% HP', lanes:['heal'], healPct:0.30 },
-            { id:'reroll1', tier:'common', text:'+1 Reroll', lanes:[], apply: () => { this.rerollsLeft++; } },
-            { id:'heal10', kind:'heal', tier:'rare', text:'Heal 10% HP', lanes:['heal'], healPct:0.10 },
+            { id: 'heal30', kind: 'heal', tier: 'rare', text: 'Heal 30% HP', lanes: ['heal'], healPct: 0.30 },
+            { id: 'reroll1', tier: 'common', text: '+1 Reroll', lanes: [], apply: () => { this.rerollsLeft++; } },
+            { id: 'heal10', kind: 'heal', tier: 'rare', text: 'Heal 10% HP', lanes: ['heal'], healPct: 0.10 },
           ];
         }
         this.levelUpUI.updateChoices(newChoices);
@@ -1074,10 +1069,10 @@ export class GameScene extends Phaser.Scene {
     this.levelUpActive = false;
     this.gamePaused = this._pausedByUser; // resume if not user-paused
     if (!this.gamePaused) this.tweens.resumeAll();
-    
+
     this._bgmTargetVolume = (this.gamePaused || this.levelUpActive) ? 0.4 : 1.0;
     this._updateBgmVolume();
-    
+
     // If multiple level-ups queued, open next immediately
     if (this.pendingLevelUps > 0) { this.pendingLevelUps--; this._openLevelUpDraft(); }
   }
@@ -1233,7 +1228,7 @@ export class GameScene extends Phaser.Scene {
       const y = Math.random() * WORLD.height;
       const s = this.add.rectangle(x, y, 20, 20, 0xff00ff).setOrigin(0.5).setDepth(3);
       s.rotation = Math.PI / 4; // diamond
-      const label = this.add.text(x, y - 18, 'E', { fontFamily:'monospace', fontSize: 10, color:'#ff99ff' }).setOrigin(0.5).setDepth(3);
+      const label = this.add.text(x, y - 18, 'E', { fontFamily: 'monospace', fontSize: 10, color: '#ff99ff' }).setOrigin(0.5).setDepth(3);
       this.shrines.push({ x, y, sprite: s, label, radius: 36, active: true });
     }
   }
