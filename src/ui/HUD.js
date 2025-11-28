@@ -5,10 +5,14 @@ export class HUD {
     this.scene = scene;
     const gw = scene.game.config.width;
     const gh = scene.game.config.height;
-    this.container = scene.add.container(gw/2, gh - 8).setScrollFactor(0).setDepth(1000);
+    this.container = scene.add.container(gw / 2, gh - 8).setScrollFactor(0).setDepth(1000);
 
-    this.levelText = scene.add.text(-100, 0, "Lv 1", { fontFamily: "monospace", fontSize: 12, color: "#000000" }).setOrigin(1, 0.5);
-    this.container.add(this.levelText);
+    // Level text at bottom left
+    this.levelText = scene.add.text(10, gh - 10, "Lv 1", { fontFamily: "monospace", fontSize: 14, color: "#ffffff" })
+      .setScrollFactor(0)
+      .setDepth(1000)
+      .setOrigin(0, 0.5);
+    // this.container.add(this.levelText); // Removed from centered container
 
     const barW = 220; const barY = 0;
     this.barBg = scene.add.rectangle(0, barY, barW, 8, 0x333333).setOrigin(0.5, 0.5);

@@ -164,6 +164,9 @@ export class GameScene extends Phaser.Scene {
     } else {
       this._startBgm();
     }
+
+    // Launch UI overlay
+    this.scene.launch('UIScene');
   }
 
   _createMallFloorTiles() {
