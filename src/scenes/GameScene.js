@@ -15,6 +15,7 @@ import { AoEPool } from "../pools/AoEPool.js";
 import { SweepingPool } from "../pools/SweepingPool.js";
 import { DifficultyState } from "../systems/Difficulty.js";
 import { Shrine } from "../entities/Shrine.js";
+import { MapGenerator } from "../systems/MapGenerator.js";
 
 export class GameScene extends Phaser.Scene {
   constructor() {
@@ -60,6 +61,26 @@ export class GameScene extends Phaser.Scene {
     this._lastDieSfxAt = 0;
   }
 
+  preload() {
+    if (!this.textures.exists('bignums')) {
+      this.load.spritesheet('bignums', 'assets/sprites/fonts/big-big-nums-1.png', { frameWidth: 17, frameHeight: 31 });
+    }
+
+    // Load tileset for procedural map
+    this.load.image('tileset', 'assets/sprites/tiles/abstract_tile_set_16x16.png');
+
+    this.load.audio('sfx_hoard', '/assets/sfx/SFX-000-Hoard-Spawn.mp3');
+    this.load.audio('sfx_shoot', '/assets/sfx/SFX-001-Player-Projectile-01.mp3');
+    this.load.audio('sfx_die', '/assets/sfx/SFX-002-Enemy-Dies.mp3');
+    this.load.audio('sfx_hit', '/assets/sfx/SFX-003-Enemy-Hit.mp3');
+    this.load.audio('sfx_crit', '/assets/sfx/SFX-004-Crit-Hit.mp3');
+    this.load.audio('sfx_xp1', '/assets/sfx/SFX-005-XP-Orb-1.mp3');
+    this.load.audio('sfx_xp2', '/assets/sfx/SFX-005-XP-Orb-2.mp3');
+    this.load.audio('sfx_xp3', '/assets/sfx/SFX-005-XP-Orb-3.mp3');
+    this.load.audio('bgm', '/assets/music/YEAH.ogg');
+    this.load.audio('bgm_loop', '/assets/music/YEAH-loop.ogg');
+  }
+
   create() {
     // World bounds and camera config
     this.cameras.main.setBounds(0, 0, WORLD.width, WORLD.height);
@@ -69,6 +90,18 @@ export class GameScene extends Phaser.Scene {
     this.bgLayer = this.add.layer();
     this.obstacleLayer = this.add.layer();
     this.entityLayer = this.add.layer();
+
+    // --- Procedural Map Generation ---
+    const mapWidth = Math.ceil(WORLD.width / 16);
+    const mapHeight = Math.ceil(WORLD.height / 16);
+    const mapGen = new MapGenerator(mapWidth, mapHeight, 16);
+    const mapData = mapGen.generate();
+
+    // Create Tilemap
+    const map = this.make.tilemap({ data: mapData, tileWidth: 16, tileHeight: 16 });
+    const tileset = map.addTilesetImage('tileset', 'tileset', 16, 16, 0, 0);
+    const layer = map.createLayer(0, tileset, 0, 0);
+    this.bgLayer.add(layer);
 
     // Player spawn at world center
     this.player = new PlayerController(this, WORLD.width / 2, WORLD.height / 2);
@@ -120,9 +153,6 @@ export class GameScene extends Phaser.Scene {
         if (pads[i] && pads[i].connected) { this.pad = pads[i]; break; }
       }
     }
-
-    // Background mall floor (static): patterned 32x32 tiles across the world
-    this._createMallFloorBackground();
 
     // Obstacles + grid
     this.obstacles = [];
@@ -180,116 +210,6 @@ export class GameScene extends Phaser.Scene {
 
     // Launch UI overlay
     this.scene.launch('UIScene');
-  }
-
-  _createMallFloorTiles() {
-    if (this._mallFloorTileKeys && this._mallFloorTileKeys.length > 0) return;
-    const sheet = this.textures.get('mall-floor');
-    if (!sheet) return;
-    const source = sheet.getSourceImage();
-    const cols = Math.floor(source.width / 32);
-    const keys = [];
-    for (let i = 0; i < cols; i++) {
-      const key = `mall-floor-32-${i}`;
-      if (!this.textures.exists(key)) {
-        const tex = this.textures.createCanvas(key, 32, 32);
-        const ctx = tex.getContext();
-        ctx.clearRect(0, 0, 32, 32);
-        const sx = i * 32;
-        const sy = 0;
-        ctx.drawImage(source, sx, sy, 32, 32, 0, 0, 32, 32);
-        tex.refresh();
-      }
-      keys.push(key);
-    }
-    this._mallFloorTileKeys = keys;
-  }
-
-  _createMallFloorBackground() {
-    this._createMallFloorTiles();
-    const tileKeys = this._mallFloorTileKeys || [];
-    if (!tileKeys.length) return;
-
-    // Map tile indices: 0 = gray, 1 = tan, 2 = olive, 3 = brown
-    const TILE = { G: 0, T: 1, O: 2, B: 3 };
-    const baseTile = TILE.G;
-
-    // Example patterns
-    const patterns = [];
-    const p1 = [
-      'GGBOTTOBGG', 'GGBOTTOBGG', 'BBBOTTOBBB', 'OOOOTTOOOO', 'TTTTTTTTTT',
-      'TTTTTTTTTT', 'OOOOTTOOOO', 'BBBOTTOBBB', 'GGBOTTOBGG', 'GGBOTTOBGG',
-    ];
-    patterns.push(p1.map(row => row.split('').map(ch => TILE[ch])));
-
-    const tilesX = Math.ceil(WORLD.width / 32);
-    const tilesY = Math.ceil(WORLD.height / 32);
-    const patternMap = new Array(tilesY);
-    for (let y = 0; y < tilesY; y++) {
-      patternMap[y] = new Array(tilesX).fill(baseTile);
-    }
-
-    const rng = new RNG((Date.now() ^ 0x1234abcd) | 0);
-    const patches = Math.floor((tilesX * tilesY) / 800);
-    for (let n = 0; n < patches; n++) {
-      const pattern = patterns[n % patterns.length];
-      const ph = pattern.length;
-      const pw = pattern[0].length;
-      const maxX = Math.max(1, tilesX - pw);
-      const maxY = Math.max(1, tilesY - ph);
-      const startX = rng.int(0, maxX);
-      const startY = rng.int(0, maxY);
-      for (let py = 0; py < ph; py++) {
-        const row = pattern[py];
-        const ty = startY + py;
-        if (ty < 0 || ty >= tilesY) continue;
-        for (let px = 0; px < pw; px++) {
-          const tx = startX + px;
-          if (tx < 0 || tx >= tilesX) continue;
-          patternMap[ty][tx] = row[px];
-        }
-      }
-    }
-
-    // Build chunks
-    const chunkKeys = [];
-    const variants = 8;
-    for (let v = 0; v < variants; v++) {
-      const rt = this.make.renderTexture({ width: 512, height: 512, add: false });
-      const startX = rng.int(0, Math.max(0, tilesX - 16));
-      const startY = rng.int(0, Math.max(0, tilesY - 16));
-      for (let ty = 0; ty < 16; ty++) {
-        const gy = startY + ty;
-        if (gy >= tilesY) continue;
-        for (let tx = 0; tx < 16; tx++) {
-          const gx = startX + tx;
-          if (gx >= tilesX) continue;
-          const idx = patternMap[gy][gx] || baseTile;
-          const key = tileKeys[idx % tileKeys.length];
-          const tileImg = this.make.image({ x: tx * 32 + 16, y: ty * 32 + 16, key, add: false });
-          tileImg.setScale(1.03125);
-          rt.draw(tileImg);
-          tileImg.destroy();
-        }
-      }
-      const key = `mall-floor-512-${v}`;
-      rt.saveTexture(key);
-      rt.destroy();
-      chunkKeys.push(key);
-    }
-
-    const chunksX = Math.ceil(WORLD.width / 512);
-    const chunksY = Math.ceil(WORLD.height / 512);
-    for (let y = 0; y < chunksY; y++) {
-      for (let x = 0; x < chunksX; x++) {
-        const idx = (Math.random() * chunkKeys.length) | 0;
-        const key = chunkKeys[idx];
-        const img = this.add.image(x * 512 + 256, y * 512 + 256, key);
-        img.setScale(1.002);
-        img.setDepth(0);
-        this.bgLayer.add(img);
-      }
-    }
   }
 
   _generateObstacles() {
@@ -450,25 +370,6 @@ export class GameScene extends Phaser.Scene {
         }
       }
     }
-  }
-
-  preload() {
-    if (!this.textures.exists('bignums')) {
-      this.load.spritesheet('bignums', 'assets/sprites/fonts/big-big-nums-1.png', { frameWidth: 17, frameHeight: 31 });
-    }
-    if (!this.textures.exists('mall-floor')) {
-      this.load.spritesheet('mall-floor', '/assets/sprites/mall-sprites-32x32.png', { frameWidth: 32, frameHeight: 32 });
-    }
-    this.load.audio('sfx_hoard', '/assets/sfx/SFX-000-Hoard-Spawn.mp3');
-    this.load.audio('sfx_shoot', '/assets/sfx/SFX-001-Player-Projectile-01.mp3');
-    this.load.audio('sfx_die', '/assets/sfx/SFX-002-Enemy-Dies.mp3');
-    this.load.audio('sfx_hit', '/assets/sfx/SFX-003-Enemy-Hit.mp3');
-    this.load.audio('sfx_crit', '/assets/sfx/SFX-004-Crit-Hit.mp3');
-    this.load.audio('sfx_xp1', '/assets/sfx/SFX-005-XP-Orb-1.mp3');
-    this.load.audio('sfx_xp2', '/assets/sfx/SFX-005-XP-Orb-2.mp3');
-    this.load.audio('sfx_xp3', '/assets/sfx/SFX-005-XP-Orb-3.mp3');
-    this.load.audio('bgm', '/assets/music/YEAH.ogg');
-    this.load.audio('bgm_loop', '/assets/music/YEAH-loop.ogg');
   }
 
   _killEnemy(enemy) {
@@ -798,201 +699,104 @@ export class GameScene extends Phaser.Scene {
     this.levelUpActive = false;
     this.gamePaused = this._pausedByUser;
     if (!this.gamePaused) this.tweens.resumeAll();
-    this._bgmTargetVolume = (this.gamePaused || this.levelUpActive) ? 0.4 : 1.0;
+    this._bgmTargetVolume = 1.0;
     this._updateBgmVolume();
-    if (this.pendingLevelUps > 0) { this.pendingLevelUps--; this._openLevelUpDraft(); }
   }
 
-  _cullObstacles() {
-    const cam = this.cameras.main;
-    const pad = 128;
-    const view = { x: cam.worldView.x - pad, y: cam.worldView.y - pad, w: cam.worldView.width + pad * 2, h: cam.worldView.height + pad * 2 };
-    const candidates = this.obstacleGrid.query(view, []);
-    for (let i = 0; i < candidates.length; i++) {
-      const o = candidates[i];
-      const inside = !(o.aabb.x + o.aabb.w < view.x || o.aabb.x > view.x + view.w || o.aabb.y + o.aabb.h < view.y || o.aabb.y > view.y + view.h);
-      o.display.setVisible(inside || !this.debugCulling);
-    }
-    if (!this._hasCulledOnce) {
-      const visibleSet = new Set(candidates);
-      for (let i = 0; i < this.obstacles.length; i++) {
-        const o = this.obstacles[i];
-        if (!visibleSet.has(o)) o.display.setVisible(false);
-      }
-      this._hasCulledOnce = true;
+  _spawnDifficultyShrines(count) {
+    for (let i = 0; i < count; i++) {
+      const x = Math.random() * (WORLD.width - 200) + 100;
+      const y = Math.random() * (WORLD.height - 200) + 100;
+      const s = new Shrine(this, x, y);
+      this.shrines.push(s);
     }
   }
 
-  _drawDebug() {
-    const g = this.debugGfx;
-    g.clear();
-    const cam = this.cameras.main;
-    if (this.debugCulling) {
-      g.lineStyle(1, 0xffffff, 0.6);
-      g.strokeRect(cam.worldView.x, cam.worldView.y, cam.worldView.width, cam.worldView.height);
+  _tryInteract() {
+    if (this._portal && this._portal.active) {
+      const dx = this.player.pos.x - this._portal.x;
+      const dy = this.player.pos.y - this._portal.y;
+      if (dx * dx + dy * dy < this._portal.radius * this._portal.radius) {
+        this._showEndBanner('Escaped!');
+        this.gamePaused = true;
+        return;
+      }
     }
-    g.lineStyle(0);
-    const hpPct = this.player.hp / this.player.hpMax;
-    g.fillStyle(0x2ecc71, 0.8);
-    g.fillRect(this.player.pos.x - 12, this.player.pos.y - 22, 24 * clamp(hpPct, 0, 1), 3);
+  }
 
-    if (this.debugCollisions) {
-      const a = this.player.getAabb();
-      g.lineStyle(1, 0x00ffff, 0.8);
-      g.strokeRect(a.x, a.y, a.w, a.h);
-      const pad = 128;
-      const view = { x: cam.worldView.x - pad, y: cam.worldView.y - pad, w: cam.worldView.width + pad * 2, h: cam.worldView.height + pad * 2 };
-      const candidates = this.obstacleGrid.query(view, []);
-      g.lineStyle(1, 0xffa500, 0.6);
-      for (let i = 0; i < candidates.length; i++) {
-        const o = candidates[i];
-        g.strokeRect(o.aabb.x, o.aabb.y, o.aabb.w, o.aabb.h);
-      }
+  _tryInteractShrine() {
+    for (const s of this.shrines) {
+      if (s.tryInteract(this.player)) return true;
     }
-    if (this.debugProjectiles) {
-      g.lineStyle(1, 0x4cc9f0, 0.8);
-      for (let id = 0; id < this.projectiles.alive.length; id++) {
-        if (!this.projectiles.alive[id]) continue;
-        const p = this.projectiles.pos[id];
-        const r = this.projectiles.radius[id];
-        g.strokeCircle(p.x, p.y, r);
-      }
-    }
-    if (this.debugXP) {
-      g.lineStyle(1, 0x38b000, 0.8);
-      g.strokeCircle(this.player.pos.x, this.player.pos.y, this.player.magnetRadius);
-      g.strokeCircle(this.player.pos.x, this.player.pos.y, this.player.pickupRadius);
-    }
+    return false;
   }
 
   _buildEnemyGrid() {
-    if (!this.enemyGrid) return;
     this.enemyGrid.clear();
-    for (let i = 0; i < this.enemyPool.active.length; i++) {
-      const e = this.enemyPool.active[i];
-      if (!e.alive) continue;
-      const r = e.radius;
-      this.enemyGrid.insert(e, { x: e.pos.x - r, y: e.pos.y - r, w: r * 2, h: r * 2 });
+    for (const e of this.enemyPool.active) {
+      if (e.alive) this.enemyGrid.insert(e, e.rect);
     }
   }
 
   _separateEnemies() {
-    if (!this.enemyGrid) return;
-    const tmp = [];
-    for (let i = 0; i < this.enemyPool.active.length; i++) {
-      const e = this.enemyPool.active[i];
+    for (const e of this.enemyPool.active) {
       if (!e.alive) continue;
-      const r = e.radius;
-      const neigh = this.enemyGrid.query({ x: e.pos.x - r * 2, y: e.pos.y - r * 2, w: r * 4, h: r * 4 }, tmp);
-      for (let j = 0; j < neigh.length; j++) {
-        const o = neigh[j]; if (o === e || !o.alive) continue;
-        const dx = e.pos.x - o.pos.x, dy = e.pos.y - o.pos.y;
-        const dist = Math.hypot(dx, dy);
-        const minDist = e.radius + o.radius;
-        if (dist > 0 && dist < minDist) {
-          const overlap = (minDist - dist) + 0.01;
-          const ux = dx / dist, uy = dy / dist;
-          const moveE = o.isSpawning ? 1.0 : 0.5;
-          const moveO = e.isSpawning ? 0.0 : 0.5;
-          e.pos.x += ux * overlap * moveE;
-          e.pos.y += uy * overlap * moveE;
-          o.pos.x -= ux * overlap * moveO;
-          o.pos.y -= uy * overlap * moveO;
-          e.rect.setPosition(e.pos.x, e.pos.y);
-          o.rect.setPosition(o.pos.x, o.pos.y);
+      const others = this.enemyGrid.query(e.rect, []);
+      for (const o of others) {
+        if (o === e || !o.alive) continue;
+        const dx = e.pos.x - o.pos.x;
+        const dy = e.pos.y - o.pos.y;
+        const distSq = dx * dx + dy * dy;
+        const minR = e.radius + o.radius;
+        if (distSq > 0 && distSq < minR * minR) {
+          const dist = Math.sqrt(distSq);
+          const push = (minR - dist) / dist * 0.5;
+          e.push(dx * push, dy * push);
+          o.push(-dx * push, -dy * push);
         }
       }
     }
   }
 
   _resolvePlayerEnemyCollisions() {
-    const pr = 12;
-    for (let i = 0; i < this.enemyPool.active.length; i++) {
-      const e = this.enemyPool.active[i];
-      if (!e.alive || e.isSpawning) continue;
-      const pa = this.player.getAabb();
-      const er = e.radius;
-      const ea = { x: e.pos.x - er, y: e.pos.y - er, w: er * 2, h: er * 2 };
-      if (aabbIntersects(pa, ea)) {
-        e.vel.x = 0; e.vel.y = 0;
-        const mtvX = aabbOverlapX(pa, ea);
-        const mtvY = aabbOverlapY(pa, ea);
-        if (Math.abs(mtvX) < Math.abs(mtvY)) {
-          const half = mtvX * 0.5;
-          this.player.resolveCollisions(this.obstacleGrid, this.obstacles, half, 0);
-          if (typeof e.pushBy === 'function') e.pushBy(-half, 0, this.obstacleGrid);
-          this.player.vel.x = 0; this.player.vel.y = 0;
-        } else {
-          const half = mtvY * 0.5;
-          this.player.resolveCollisions(this.obstacleGrid, this.obstacles, 0, half);
-          if (typeof e.pushBy === 'function') e.pushBy(0, -half, this.obstacleGrid);
-          this.player.vel.x = 0; this.player.vel.y = 0;
-        }
+    // Player vs Enemy body
+    // Handled in _enemyContactDamage now for continuous damage
+  }
+
+  _cullObstacles() {
+    // Simple distance check to toggle visibility
+    const cx = this.cameras.main.scrollX + this.cameras.main.width / 2;
+    const cy = this.cameras.main.scrollY + this.cameras.main.height / 2;
+    const cullDist = Math.max(this.cameras.main.width, this.cameras.main.height) * 0.8;
+    const cullDistSq = cullDist * cullDist;
+
+    if (this.debugCulling) return;
+
+    for (const o of this.obstacles) {
+      const dx = o.x - cx;
+      const dy = o.y - cy;
+      const vis = (dx * dx + dy * dy < cullDistSq);
+      o.display.setVisible(vis);
+    }
+  }
+
+  _drawDebug() {
+    this.debugGfx.clear();
+    if (this.debugCollisions) {
+      this.debugGfx.lineStyle(1, 0x00ff00, 0.5);
+      for (const o of this.obstacles) {
+        this.debugGfx.strokeRect(o.aabb.x, o.aabb.y, o.aabb.w, o.aabb.h);
       }
-    }
-  }
-
-  _spawnDifficultyShrines(count) {
-    const rng = new RNG(12345);
-    this.shrines = [];
-    for (let i = 0; i < count; i++) {
-      const x = rng.int(100, WORLD.width - 100);
-      const y = rng.int(100, WORLD.height - 100);
-      this.shrines.push(new Shrine(this, x, y, i));
-    }
-  }
-
-  _tryInteractShrine() {
-    const p = this.player;
-    let interacted = false;
-    for (const s of this.shrines) {
-      const dx = p.pos.x - s.pos.x;
-      const dy = p.pos.y - s.pos.y;
-      if (dx * dx + dy * dy < 60 * 60) {
-        if (s.interact()) {
-          interacted = true;
-          break;
-        }
+      this.debugGfx.lineStyle(1, 0xff0000, 0.5);
+      for (const e of this.enemyPool.active) {
+        if (e.alive) this.debugGfx.strokeRect(e.rect.x - e.rect.width / 2, e.rect.y - e.rect.height / 2, e.rect.width, e.rect.height);
       }
+      this.debugGfx.lineStyle(1, 0x0000ff, 0.5);
+      this.debugGfx.strokeRect(this.player.rect.x - this.player.rect.width / 2, this.player.rect.y - this.player.rect.height / 2, this.player.rect.width, this.player.rect.height);
     }
-    return interacted;
-  }
-
-  _tryInteract() {
-    if (this._portal && this._portal.active) {
-      const dx = this._portal.x - this.player.pos.x;
-      const dy = this._portal.y - this.player.pos.y;
-      if (dx * dx + dy * dy <= this._portal.radius * this._portal.radius) {
-        this._portal.active = false;
-        this._portal.sprite.setVisible(false);
-        this._spawnFinalBoss();
-        return;
-      }
-    }
-  }
-
-  _spawnFinalBoss() {
-    const e = this.enemyPool.spawnAround(this.player.pos);
-    if (!e) return;
-    e.hpMax = e.hp = ENEMIES.hp * 80;
-    e.speed = ENEMIES.speed * 0.9;
-    e.rect.width = ENEMIES.size * 2.5;
-    e.rect.height = ENEMIES.size * 2.5;
-    e.radius = (ENEMIES.size * 2.5) / 2;
-    e.rect.setFillStyle(0xff6b6b);
-    e.isBoss = true;
-    e.isFinal = true;
-    this._finalBossAlive = true;
   }
 
   _updateDebugText() {
-    if (!this.debugText) return;
-    const d = this.difficulty;
-    this.debugText.setText(
-      `Time: ${(d.timeSeconds / 60).toFixed(1)}m\n` +
-      `Danger: ${d.danger.toFixed(2)}\n` +
-      `Shrines: ${d.shrineCount}\n` +
-      `Enemies: ${this.enemyPool.active.length}`
-    );
+    // Updated in update()
   }
 }

@@ -51,6 +51,16 @@ export class Shrine {
         }
     }
 
+    tryInteract(player) {
+        if (!this.active) return false;
+        const dx = player.pos.x - this.pos.x;
+        const dy = player.pos.y - this.pos.y;
+        if (dx * dx + dy * dy < 60 * 60) {
+            return this.interact();
+        }
+        return false;
+    }
+
     interact() {
         if (!this.active) return false;
 
