@@ -7,9 +7,14 @@ import { clamp, vec2, vec2Normalize, aabbIntersects, aabbOverlapX, aabbOverlapY 
 import { EnemyPool } from "../pools/EnemyPool.js";
 import { ProjectilePool } from "../pools/ProjectilePool.js";
 import { XPOrbPool } from "../pools/XPOrbPool.js";
-import { Upgrades, pickDraft, createLaneCounters } from "../systems/Upgrades.js";
+import { UpgradeManager, pickDraft } from "../systems/Upgrades.js";
 import { LevelUpUI } from "../ui/LevelUpUI.js";
 import { resolveShot } from "../systems/Stats.js";
+import { WeaponManager } from "../systems/WeaponManager.js";
+import { AoEPool } from "../pools/AoEPool.js";
+import { SweepingPool } from "../pools/SweepingPool.js";
+import { DifficultyState } from "../systems/Difficulty.js";
+import { Shrine } from "../entities/Shrine.js";
 
 export class GameScene extends Phaser.Scene {
   constructor() {
@@ -40,7 +45,7 @@ export class GameScene extends Phaser.Scene {
     this.totalTime = 10 * 60;
     this.remainingTime = this.totalTime;
     this.eventsFired = new Set();
-    this.difficultyLevel = 0;
+    this.difficulty = new DifficultyState();
     this._portal = null; // {sprite, x, y, radius}
     this._finalBossAlive = false;
     this._padStartPrev = false;
@@ -129,15 +134,19 @@ export class GameScene extends Phaser.Scene {
     this.projectiles = new ProjectilePool(this);
     this.xpOrbs = new XPOrbPool(this);
     this.enemyGrid = new SpatialGrid(64);
+    this.aoePool = new AoEPool(this);
+    this.sweepingPool = new SweepingPool(this);
+    this.weaponManager = new WeaponManager(this, this.player);
+    this.upgradeManager = new UpgradeManager(this, this.player);
+
+    // Give player initial weapon
+    this.weaponManager.addWeapon('star_bolt');
 
     // Debug graphics overlay reused each frame
     this.debugGfx = this.add.graphics().setDepth(100);
 
     // Send player reference to UI scene
     this.game.events.emit("hud:set-player", this.player);
-
-    // Initialize stats counters for upgrades
-    this.player.statsCounters = createLaneCounters();
 
     // React to level-ups
     this.events.on('player:levelup', () => {
@@ -146,6 +155,7 @@ export class GameScene extends Phaser.Scene {
     });
 
     // Difficulty shrines
+    this.shrines = [];
     this._spawnDifficultyShrines(6);
 
     // Small onboarding enemies to demonstrate combat loop
@@ -155,6 +165,9 @@ export class GameScene extends Phaser.Scene {
     this.debugText = this.add.text(8, 40, "", { fontFamily: 'monospace', fontSize: 10, color: '#dddddd' })
       .setScrollFactor(0)
       .setDepth(1000);
+
+    // Initial debug text update
+    this._updateDebugText();
 
     // Start BGM only after audio is unlocked
     if (this.sound.locked) {
@@ -199,58 +212,16 @@ export class GameScene extends Phaser.Scene {
 
     // Map tile indices: 0 = gray, 1 = tan, 2 = olive, 3 = brown
     const TILE = { G: 0, T: 1, O: 2, B: 3 };
-
-    // Base gray tile index
     const baseTile = TILE.G;
 
-    // Example patterns inspired by the provided layouts.
-    // Each pattern is a small 2D array of tile indices.
+    // Example patterns
     const patterns = [];
-
     const p1 = [
-      'GGBOTTOBGG',
-      'GGBOTTOBGG',
-      'BBBOTTOBBB',
-      'OOOOTTOOOO',
-      'TTTTTTTTTT',
-      'TTTTTTTTTT',
-      'OOOOTTOOOO',
-      'BBBOTTOBBB',
-      'GGBOTTOBGG',
-      'GGBOTTOBGG',
+      'GGBOTTOBGG', 'GGBOTTOBGG', 'BBBOTTOBBB', 'OOOOTTOOOO', 'TTTTTTTTTT',
+      'TTTTTTTTTT', 'OOOOTTOOOO', 'BBBOTTOBBB', 'GGBOTTOBGG', 'GGBOTTOBGG',
     ];
     patterns.push(p1.map(row => row.split('').map(ch => TILE[ch])));
 
-    const p2 = [
-      'GGGGBBGGGG',
-      'GGGGBBGGGG',
-      'GGGGBBGGGG',
-      'GGGBOOBGGG',
-      'BBBOTTOBBB',
-      'BBBOTTOBBB',
-      'GGGBOOBGGG',
-      'GGGGBBGGGG',
-      'GGGGBBGGGG',
-      'GGGGBBGGGG',
-    ];
-    patterns.push(p2.map(row => row.split('').map(ch => TILE[ch])));
-
-    // A thinner stripe variant
-    const p3 = [
-      'GGGGTTGGGG',
-      'GGGGTTGGGG',
-      'GGBBTTBBGG',
-      'GGBBTTBBGG',
-      'OOOOTTOOOO',
-      'OOOOTTOOOO',
-      'GGBBTTBBGG',
-      'GGBBTTBBGG',
-      'GGGGTTGGGG',
-      'GGGGTTGGGG',
-    ];
-    patterns.push(p3.map(row => row.split('').map(ch => TILE[ch])));
-
-    // Build a coarse pattern map in tile space (32x32 tiles).
     const tilesX = Math.ceil(WORLD.width / 32);
     const tilesY = Math.ceil(WORLD.height / 32);
     const patternMap = new Array(tilesY);
@@ -258,9 +229,8 @@ export class GameScene extends Phaser.Scene {
       patternMap[y] = new Array(tilesX).fill(baseTile);
     }
 
-    // Sprinkle pattern patches intermittently across the world.
     const rng = new RNG((Date.now() ^ 0x1234abcd) | 0);
-    const patches = Math.floor((tilesX * tilesY) / 800); // density scaler
+    const patches = Math.floor((tilesX * tilesY) / 800);
     for (let n = 0; n < patches; n++) {
       const pattern = patterns[n % patterns.length];
       const ph = pattern.length;
@@ -276,25 +246,12 @@ export class GameScene extends Phaser.Scene {
         for (let px = 0; px < pw; px++) {
           const tx = startX + px;
           if (tx < 0 || tx >= tilesX) continue;
-          const value = row[px];
-          patternMap[ty][tx] = value;
+          patternMap[ty][tx] = row[px];
         }
       }
     }
 
-    // Add a little noise: rare non-gray singles to break up large gray areas.
-    for (let y = 0; y < tilesY; y++) {
-      for (let x = 0; x < tilesX; x++) {
-        if (patternMap[y][x] === baseTile && rng.next() < 0.02) {
-          const accent = 1 + Math.floor(rng.next() * 3); // T/O/B
-          patternMap[y][x] = accent;
-        }
-      }
-    }
-
-    // Build a small set of 512x512 chunk textures (16x16 tiles) sampled from the pattern map,
-    // then tile those across the world. This keeps draw calls low without creating thousands
-    // of render textures at once.
+    // Build chunks
     const chunkKeys = [];
     const variants = 8;
     for (let v = 0; v < variants; v++) {
@@ -309,10 +266,8 @@ export class GameScene extends Phaser.Scene {
           if (gx >= tilesX) continue;
           const idx = patternMap[gy][gx] || baseTile;
           const key = tileKeys[idx % tileKeys.length];
-          // Draw with slight overlap (33x33) to prevent internal gaps
-          // We must use a temporary Game Object to draw with scale/rotation to a RenderTexture
           const tileImg = this.make.image({ x: tx * 32 + 16, y: ty * 32 + 16, key, add: false });
-          tileImg.setScale(1.03125); // 33/32 ~= 1.03125
+          tileImg.setScale(1.03125);
           rt.draw(tileImg);
           tileImg.destroy();
         }
@@ -330,7 +285,6 @@ export class GameScene extends Phaser.Scene {
         const idx = (Math.random() * chunkKeys.length) | 0;
         const key = chunkKeys[idx];
         const img = this.add.image(x * 512 + 256, y * 512 + 256, key);
-        // Scale up slightly to overlap neighbors (513/512 ~= 1.002)
         img.setScale(1.002);
         img.setDepth(0);
         this.bgLayer.add(img);
@@ -339,11 +293,8 @@ export class GameScene extends Phaser.Scene {
   }
 
   _generateObstacles() {
-    // Generate a reproducible scatter of trees (triangles) and rocks (rectangles)
     const rng = new RNG(0xdecafbad);
     const count = rng.int(OBSTACLES.minCount, OBSTACLES.maxCount);
-
-    // Bake a small triangle texture for trees to avoid heavy Graphics per instance
     this._createTreeTextures();
 
     const placed = [];
@@ -357,11 +308,9 @@ export class GameScene extends Phaser.Scene {
         x = rng.int(0, WORLD.width);
         y = rng.int(0, WORLD.height);
         const aabb = { x: x - w / 2, y: y - h / 2, w, h };
-        // Avoid near player start
         const dx = x - WORLD.width / 2;
         const dy = y - WORLD.height / 2;
         if (dx * dx + dy * dy < 300 * 300) continue;
-        // Simple overlap test against a few recent placed (not O(n^2))
         let overlap = false;
         for (let j = Math.max(0, placed.length - 50); j < placed.length; j++) {
           const p = placed[j];
@@ -388,8 +337,6 @@ export class GameScene extends Phaser.Scene {
       this.obstacles.push(obj);
       this.obstacleLayer.add(obj.display);
     }
-
-    // Insert into spatial grid
     this.obstacleGrid.clear();
     for (const o of this.obstacles) this.obstacleGrid.insert(o, o.aabb);
   }
@@ -400,7 +347,6 @@ export class GameScene extends Phaser.Scene {
       g.clear();
       g.fillStyle(0xffffff, 1);
       g.beginPath();
-      // triangle pointing up
       g.moveTo(baseW / 2, 0);
       g.lineTo(baseW, baseH);
       g.lineTo(0, baseH);
@@ -424,17 +370,13 @@ export class GameScene extends Phaser.Scene {
     if (up) y -= 1;
     if (down) y += 1;
 
-    // Gamepad left stick (no smoothing, with deadzone)
     if (this.pad) {
       const sx = this.pad.axes.length > 0 ? this.pad.axes[0].getValue() : 0;
       const sy = this.pad.axes.length > 1 ? this.pad.axes[1].getValue() : 0;
       const mag = Math.hypot(sx, sy);
-      if (mag > INPUT.gamepadDeadzone) {
-        x = sx; y = sy;
-      }
+      if (mag > INPUT.gamepadDeadzone) { x = sx; y = sy; }
     }
 
-    // Normalize
     const len = Math.hypot(x, y);
     this._hasMoveInput = len > 0.0001;
     if (len > 0) { x /= len; y /= len; }
@@ -442,77 +384,27 @@ export class GameScene extends Phaser.Scene {
   }
 
   _handleHotkeys() {
-    // Debug toggles
     Phaser.Input.Keyboard.JustDown(this.keys.F1) && (this.debugCulling = !this.debugCulling);
     Phaser.Input.Keyboard.JustDown(this.keys.F2) && (this.debugCollisions = !this.debugCollisions);
     Phaser.Input.Keyboard.JustDown(this.keys.F5) && (this.debugProjectiles = !this.debugProjectiles);
     Phaser.Input.Keyboard.JustDown(this.keys.F6) && (this.debugXP = !this.debugXP);
 
-    // Pause toggle via ESC (and gamepad start if connected)
     if (Phaser.Input.Keyboard.JustDown(this.keys.ESC)) {
       this._pausedByUser = !this._pausedByUser;
       this.gamePaused = this._pausedByUser || this.levelUpActive;
-
-      if (this.gamePaused) {
-        this.tweens.pauseAll();
-      } else {
-        this.tweens.resumeAll();
-      }
-
-      // Quieter when paused/level-up, louder when active
+      if (this.gamePaused) this.tweens.pauseAll();
+      else this.tweens.resumeAll();
       this._bgmTargetVolume = (this.gamePaused || this.levelUpActive) ? 0.4 : 1.0;
-      this._updateBgmVolume();  // dt ommited --> instant change
-    }
-    if (this.pad) {
-      const startPressed = this.pad.buttons && this.pad.buttons[9] && this.pad.buttons[9].pressed;
-      if (startPressed && !this._padStartPrev) {
-        this._pausedByUser = !this._pausedByUser;
-        this.gamePaused = this._pausedByUser || this.levelUpActive;
-      }
-      this._padStartPrev = !!startPressed;
+      this._updateBgmVolume();
     }
 
-    // Tuning hotkeys (from milestone 1): [/] maxSpeed, ;/' accel, ,/. friction, -/ slash smoothingK
-    if (Phaser.Input.Keyboard.JustDown(this.keys.OEM_4) || Phaser.Input.Keyboard.JustDown(this.keys.ONE)) this.player.baseMaxSpeed = Math.max(10, this.player.baseMaxSpeed - 10);
-    if (Phaser.Input.Keyboard.JustDown(this.keys.OEM_6) || Phaser.Input.Keyboard.JustDown(this.keys.TWO)) this.player.baseMaxSpeed = Math.min(2000, this.player.baseMaxSpeed + 10);
-    if (Phaser.Input.Keyboard.JustDown(this.keys.OEM_1) || Phaser.Input.Keyboard.JustDown(this.keys.THREE)) this.player.accel = Math.max(0, this.player.accel - 50);
-    if (Phaser.Input.Keyboard.JustDown(this.keys.QUOTE) || Phaser.Input.Keyboard.JustDown(this.keys.FOUR)) this.player.accel = Math.min(10000, this.player.accel + 50);
-    if (Phaser.Input.Keyboard.JustDown(this.keys.COMMA) || Phaser.Input.Keyboard.JustDown(this.keys.FIVE)) this.player.friction = Math.max(0, this.player.friction - 50);
-    if (Phaser.Input.Keyboard.JustDown(this.keys.PERIOD) || Phaser.Input.Keyboard.JustDown(this.keys.SIX)) this.player.friction = Math.min(10000, this.player.friction + 50);
-    if (Phaser.Input.Keyboard.JustDown(this.keys.MINUS) || Phaser.Input.Keyboard.JustDown(this.keys.SEVEN)) INPUT.smoothingK = Math.max(0, INPUT.smoothingK - 0.05);
-    if (Phaser.Input.Keyboard.JustDown(this.keys.SLASH) || Phaser.Input.Keyboard.JustDown(this.keys.EIGHT)) INPUT.smoothingK = Math.min(1, INPUT.smoothingK + 0.05);
-
-    // Enemy burst for stress testing
-    if (Phaser.Input.Keyboard.JustDown(this.keys.B)) {
-      for (let i = 0; i < 30; i++) this.enemyPool.spawnAround(this.player.pos);
-    }
-    // Manual projectile volley for testing
-    if (Phaser.Input.Keyboard.JustDown(this.keys.P)) {
-      // Fire a test volley in the last aim direction using resolved stats (ignores cooldown)
-      const baseWeapon = { damage: this.player.baseProjDamage, speed: this.player.baseProjSpeed, lifetime: this.player.baseProjLifetime, cooldown: this.player.baseFireCooldown, amount: this.player.baseProjectilesPerVolley, size: 1.0, pierce: 0, critChance: 0 };
-      const resolved = resolveShot(baseWeapon, this.player.stats);
-      const radius = PROJECTILES.radius * resolved.size;
-      const dir = this.player.lastAimDir.x || this.player.lastAimDir.y ? this.player.lastAimDir : { x: 1, y: 0 };
-      for (let i = 0; i < resolved.amount; i++) {
-        this.projectiles.spawn(
-          this.player.pos.x,
-          this.player.pos.y,
-          dir.x * resolved.speed,
-          dir.y * resolved.speed,
-          resolved.damage,
-          resolved.lifetime,
-          { collidesTerrain: true, radius, critChance: resolved.critChance, critMult: resolved.critMult, pierce: resolved.pierce }
-        );
-      }
-    }
-
-    // Interactions (E): portal activation and shrine difficulty increase
     if (Phaser.Input.Keyboard.JustDown(this.keys.E)) {
-      this._tryInteract();
+      if (!this._tryInteractShrine()) {
+        this._tryInteract();
+      }
     }
   }
 
-  // Finds nearest enemy within a scan radius; returns the enemy or null.
   _findNearestEnemy(x, y, radius = 900) {
     let best = null, bestD2 = radius * radius;
     for (let i = 0; i < this.enemyPool.active.length; i++) {
@@ -525,53 +417,30 @@ export class GameScene extends Phaser.Scene {
     return best;
   }
 
-  // Returns up to maxCount nearest enemies within radius, sorted by distance ascending.
-  _findNearestEnemies(x, y, radius = 900, maxCount = 3) {
-    const res = [];
-    const r2 = radius * radius;
-    for (let i = 0; i < this.enemyPool.active.length; i++) {
-      const e = this.enemyPool.active[i];
-      if (!e.alive) continue;
-      const dx = e.pos.x - x, dy = e.pos.y - y;
-      const d2 = dx * dx + dy * dy;
-      if (d2 <= r2) res.push({ e, d2 });
-    }
-    res.sort((a, b) => a.d2 - b.d2);
-    const out = [];
-    for (let i = 0; i < res.length && out.length < maxCount; i++) out.push(res[i].e);
-    return out;
-  }
-
   _projectileEnemyCollisions() {
-    // O(N*M) narrowphase; with pierce support and simple per-frame de-dupe.
     for (let id = 0; id < this.projectiles.alive.length; id++) {
       if (!this.projectiles.alive[id]) continue;
       const p = this.projectiles.pos[id];
       const r = this.projectiles.radius[id];
       let remaining = this.projectiles.hitsLeft ? this.projectiles.hitsLeft[id] : 1;
-      if (remaining <= 0) remaining = 1; // safety
+      if (remaining <= 0) remaining = 1;
       const hitThisFrame = new Set();
       for (let i = 0; i < this.enemyPool.active.length; i++) {
-        if (!this.projectiles.alive[id]) break; // might despawn mid-loop
+        if (!this.projectiles.alive[id]) break;
         const e = this.enemyPool.active[i];
         if (!e.alive || hitThisFrame.has(e)) continue;
         const dx = e.pos.x - p.x, dy = e.pos.y - p.y;
         const rr = r + e.radius;
         if (dx * dx + dy * dy <= rr * rr) {
-          // Apply crit and damage (single roll, shared by damage + visuals)
           const cc = this.projectiles.critChance[id] || 0;
           const cm = this.projectiles.critMult[id] || 2;
-          const roll = Math.random();
-          const isCrit = roll < cc;
+          const isCrit = Math.random() < cc;
           let dmg = this.projectiles.damage[id] * (isCrit ? cm : 1);
-          // Clamp to max single-hit damage
           dmg = Math.min(999, Math.max(0, dmg));
           const dead = e.hit(dmg);
           if (dead) this._killEnemy(e);
-          // Hit feedback: small particle burst + sprite-based damage numbers
           this._spawnHitParticles(p.x, p.y, isCrit);
           this._damageNumber(p.x, p.y - 10, Math.round(dmg), isCrit);
-          // SFX: enemy hit (always) + crit overlay
           this.sound.play('sfx_hit', { volume: 0.4 });
           if (isCrit) this.sound.play('sfx_crit', { volume: 0.5 });
           hitThisFrame.add(e);
@@ -584,21 +453,12 @@ export class GameScene extends Phaser.Scene {
   }
 
   preload() {
-    // Damage numbers spritesheet: rows => 0 white, 1 yellow, 2 red, 3 cyan
     if (!this.textures.exists('bignums')) {
-      this.load.spritesheet('bignums', 'assets/sprites/fonts/big-big-nums-1.png', {
-        frameWidth: 17,
-        frameHeight: 31,
-      });
+      this.load.spritesheet('bignums', 'assets/sprites/fonts/big-big-nums-1.png', { frameWidth: 17, frameHeight: 31 });
     }
-    // Mall floor spritesheet: 32x32 frames, first row contains 16x16 floor tiles
     if (!this.textures.exists('mall-floor')) {
-      this.load.spritesheet('mall-floor', '/assets/sprites/mall-sprites-32x32.png', {
-        frameWidth: 32,
-        frameHeight: 32,
-      });
+      this.load.spritesheet('mall-floor', '/assets/sprites/mall-sprites-32x32.png', { frameWidth: 32, frameHeight: 32 });
     }
-    // Audio SFX (served from public/ at /assets/...)
     this.load.audio('sfx_hoard', '/assets/sfx/SFX-000-Hoard-Spawn.mp3');
     this.load.audio('sfx_shoot', '/assets/sfx/SFX-001-Player-Projectile-01.mp3');
     this.load.audio('sfx_die', '/assets/sfx/SFX-002-Enemy-Dies.mp3');
@@ -612,26 +472,16 @@ export class GameScene extends Phaser.Scene {
   }
 
   _killEnemy(enemy) {
-    // Spawn an XP orb; value based on difficulty and timer
     let value = this._xpValueForKill();
     if (enemy.isBoss) value += 3;
     if (enemy.isFinal) value += 6;
-    // Drop multiple orbs if value is high
     while (value > 3) { this.xpOrbs.spawn(enemy.pos.x, enemy.pos.y, 3); value -= 3; }
     this.xpOrbs.spawn(enemy.pos.x, enemy.pos.y, Math.max(1, value));
-    // Play enemy die SFX with horizontal panning relative to screen center
+
     const now = this.time.now || 0;
     if (now - this._lastDieSfxAt > 50) {
-      const cam = this.cameras.main;
-      const view = cam.worldView;
-      const cx = view.x + view.width * 0.5;
-      let pan = 0;
-      if (enemy.pos.x < view.x) pan = -1;
-      else if (enemy.pos.x > view.x + view.width) pan = 1;
-      else pan = Phaser.Math.Clamp((enemy.pos.x - cx) / (view.width * 0.5), -1, 1);
       const snd = this.sound.add('sfx_die');
       snd.setVolume(0.7);
-      if (snd.setPan) snd.setPan(pan);
       snd.once('complete', () => snd.destroy());
       snd.play();
       this._lastDieSfxAt = now;
@@ -645,10 +495,9 @@ export class GameScene extends Phaser.Scene {
   }
 
   _xpValueForKill() {
-    // Difficulty and time progress influence orb tier probabilities
     const elapsed = this.totalTime - Math.max(0, this.remainingTime);
     const minutes = elapsed / 60;
-    const d = this.difficultyLevel;
+    const d = this.difficulty.danger;
     const p3 = Math.min(0.05 + 0.02 * d + 0.01 * minutes, 0.35);
     const p2 = Math.min(0.20 + 0.03 * d + 0.02 * minutes, 0.7);
     const r = Math.random();
@@ -658,13 +507,11 @@ export class GameScene extends Phaser.Scene {
   }
 
   _spawnHitParticles(x, y, crit = false) {
-    // Create a tiny neon texture on the fly if missing
     if (!this.textures.exists('p')) {
       const g = this.add.graphics();
       g.fillStyle(0xffffff, 1).fillRect(0, 0, 2, 2).generateTexture('p', 2, 2); g.destroy();
     }
     const color = crit ? 0xfff275 : 0x00e5ff;
-    // In Phaser 3.90, add.particles(x, y, texture, config) returns a ParticleEmitter directly
     const emitter = this.add.particles(x, y, 'p', {
       speed: { min: 30, max: 120 },
       angle: { min: 0, max: 360 },
@@ -677,7 +524,6 @@ export class GameScene extends Phaser.Scene {
       blendMode: 'ADD'
     });
     this.time.delayedCall(80, () => emitter.stop());
-    // Clean up the underlying manager shortly after
     this.time.delayedCall(500, () => { if (emitter.manager) emitter.manager.destroy(); });
   }
 
@@ -688,65 +534,31 @@ export class GameScene extends Phaser.Scene {
   }
 
   _damageNumber(x, y, value, isCrit = false, isPlayer = false, isHeal = false) {
-    // If spritesheet missing, fallback to text
     if (!this.textures.exists('bignums')) { this._floatText(x, y, String(value), isCrit ? 0xfff275 : 0xffffff); return; }
     const str = String(Math.max(0, value | 0));
     const container = this.add.container(x, y).setDepth(1200);
-    const scale = isCrit ? 0.8 : 0.6; // crits are slightly larger
+    const scale = isCrit ? 0.8 : 0.6;
     const digitW = 17 * scale;
     const totalW = str.length * digitW;
-    const digits = [];
     for (let i = 0; i < str.length; i++) {
-      const d = str.charCodeAt(i) - 48; // '0' -> 0
+      const d = str.charCodeAt(i) - 48;
       const row = isHeal ? 3 : (isPlayer ? 2 : (isCrit ? 1 : 0));
       const frame = row * 10 + Phaser.Math.Clamp(d, 0, 9);
       const spr = this.add.image(-totalW / 2 + i * digitW + digitW / 2, 0, 'bignums', frame).setOrigin(0.5);
       spr.setScale(scale);
       spr.setBlendMode(Phaser.BlendModes.ADD);
       container.add(spr);
-      digits.push(spr);
     }
-    // Normal + player damage: shrink a bit more; Crits: pulse then shrink; Heals: wavy digits as it floats
     const duration = 900;
-    const endScale = isCrit ? 0.92 : 0.82;
-    const floatTween = this.tweens.add({
+    this.tweens.add({
       targets: container,
       y: y - 24,
-      alpha: 1, // we'll drive alpha manually below for a longer opaque hold
-      scale: endScale,
+      alpha: { from: 1, to: 0 },
+      scale: isCrit ? 0.92 : 0.82,
       duration,
       ease: 'cubic.out',
-      onUpdate: (tw, t) => {
-        // keep opaque for the first ~30% of the life, then fade out
-        const prog = tw.progress; // 0..1
-        const fadeStart = 0.3;
-        container.alpha = prog < fadeStart ? 1 : 1 - Math.min(1, (prog - fadeStart) / (1 - fadeStart));
-        if (isHeal) {
-          const prog = tw.progress; // 0..1
-          // Wave: each digit oscillates vertically
-          for (let i = 0; i < digits.length; i++) {
-            const phase = prog * Math.PI * 6 + i * 0.8; // higher frequency
-            digits[i].y = Math.sin(phase) * 4;          // larger amplitude
-          }
-        }
-      },
       onComplete: () => container.destroy(),
     });
-    if (isCrit) {
-      // Quick pulse and color strobe for crits
-      this.tweens.add({ targets: container, scaleX: scale * 1.2, scaleY: scale * 1.2, yoyo: true, duration: 140, repeat: 1 });
-      this.tweens.addCounter({
-        from: 0, to: 1, duration: 360, yoyo: true, repeat: 1,
-        onUpdate: (tw) => {
-          const v = tw.getValue();
-          const c1 = Phaser.Display.Color.ValueToColor(0xfff275);
-          const c2 = Phaser.Display.Color.ValueToColor(0xffffff);
-          const c = Phaser.Display.Color.Interpolate.ColorWithColor(c1, c2, 1, v);
-          const tint = Phaser.Display.Color.GetColor(c.r, c.g, c.b);
-          digits.forEach(s => s.setTint(tint));
-        }
-      });
-    }
   }
 
   _showEndBanner(text) {
@@ -758,20 +570,21 @@ export class GameScene extends Phaser.Scene {
   }
 
   _enemyContactDamage(dt) {
-    // Overlaps cause periodic damage ticks with a global interval
-    let total = 0;
+    let totalDamage = 0;
+    let hitCount = 0;
     for (let i = 0; i < this.enemyPool.active.length; i++) {
       const e = this.enemyPool.active[i];
       if (!e.alive || e.isSpawning || !e.canDamage) continue;
       const dx = e.pos.x - this.player.pos.x, dy = e.pos.y - this.player.pos.y;
-      const rr = e.radius + 12; // cheap circle-vs-circle with player approx
+      const rr = e.radius + 12;
       if (dx * dx + dy * dy <= rr * rr) {
-        total++;
+        totalDamage += (e.damage || 3);
+        hitCount++;
       }
     }
     this.playerContactTimer -= dt;
-    if (total > 0 && this.playerContactTimer <= 0) {
-      const dmg = Math.max(1, Math.round(3 * total)); // discrete hits per tick
+    if (hitCount > 0 && this.playerContactTimer <= 0) {
+      const dmg = Math.max(1, Math.round(totalDamage));
       this.player.damage(dmg);
       this._damageNumber(this.player.pos.x, this.player.pos.y - 10, dmg, false, true);
       this.playerContactTimer = this.playerContactInterval;
@@ -781,55 +594,53 @@ export class GameScene extends Phaser.Scene {
   update(time, deltaMs) {
     this._handleHotkeys();
     const dt = Math.min(0.1, deltaMs / 1000);
-    // Pause handling: do not advance accumulator or timer while paused or in level-up
     if (!(this.gamePaused || this.levelUpActive)) {
       this.accumulator += dt;
       this._updateGameTimer(dt);
+      this.difficulty.update(dt);
+      this._updateDebugText();
     }
 
-    // Run fixed update steps
     const step = GAME.fixedDt;
     while (this.accumulator >= step) {
-      if (this.levelUpActive || this.gamePaused) break; // pause simulation
+      if (this.levelUpActive || this.gamePaused) break;
+
       const dir = this._readInputDir();
-      // Apply derived stat effects each step
       this.player.maxSpeed = this.player.baseMaxSpeed * this.player.stats.moveSpeed;
       this.player.magnetRadius = PLAYER.magnetRadius * this.player.stats.magnet;
       this.player.step(step, dir, this.obstacleGrid, this.obstacles);
-      // Enemies and auto-spawn
+      this.player.updateAim(step, (x, y) => this._findNearestEnemy(x, y));
+
+      this.weaponManager.update(step);
+      this.projectiles.update(step, this.obstacleGrid);
+      this.aoePool.update(step);
+      this.sweepingPool.update(step);
+
       this.enemyPool.autoSpawn(step, this.player.pos);
       this.enemyPool.update(step, this.player.pos);
       this._buildEnemyGrid();
       this._separateEnemies();
       this._resolvePlayerEnemyCollisions();
-      // Player auto-fire and projectile updates
-      this.player.tryAutoFire(step, (x, y) => this._findNearestEnemy(x, y, 900), this.projectiles);
-      this.projectiles.update(step, this.obstacleGrid);
-      // XP orbs update and pickups with tiered SFX
+
       this.xpOrbs.update(step, this.player, (value) => {
         const key = value >= 3 ? 'sfx_xp3' : (value === 2 ? 'sfx_xp2' : 'sfx_xp1');
         this.sound.play(key, { volume: 0.35 });
         this.player.addXP(value);
       });
-      // Collisions
       this._projectileEnemyCollisions();
       this._enemyContactDamage(step);
       this.accumulator -= step;
     }
 
-    // Culling optimization for obstacles: toggle visibility based on camera view
     this._cullObstacles();
-    // Refresh debug overlay
     this._drawDebug();
 
-    // Update debug readout text
     const fps = this.game.loop.actualFps || 0;
     const lines = [
       `FPS: ${fps.toFixed(0)}`,
       `Time: ${this._formatTime(this.remainingTime)}  ${this.gamePaused ? '[PAUSED]' : ''}`,
       `Lv: ${this.player.level}  XP: ${this.player.xp}/${this.player.xpForNext}`,
-      `Speed: ${this.player.maxSpeed.toFixed(0)}  Accel: ${this.player.accel.toFixed(0)}  Friction: ${this.player.friction.toFixed(0)}  SmoothK: ${INPUT.smoothingK.toFixed(2)}`,
-      `Enemies: ${this.enemyPool.active.length}  Proj: ${this.projectiles.countActive}  Orbs: ${this.xpOrbs.countActive}  Diff: ${this.difficultyLevel}`,
+      `Enemies: ${this.enemyPool.active.length}  Proj: ${this.projectiles.countActive}  Orbs: ${this.xpOrbs.countActive}  Diff: ${this.difficulty.danger.toFixed(2)}`,
     ];
     this.debugText.setText(lines.join('\n'));
 
@@ -845,40 +656,24 @@ export class GameScene extends Phaser.Scene {
 
   _updateGameTimer(dt) {
     const prev = this.remainingTime;
-    // Allow negative time for final swarm escalation window (up to 10 minutes)
     this.remainingTime = Math.max(-600, this.remainingTime - dt);
 
-    // Helper to fire a one-shot event when crossing a threshold
     const ev = (tag, fn) => {
       if (this.eventsFired.has(tag)) return;
       fn();
       this.eventsFired.add(tag);
     };
 
-    // Thresholds (countdown)
-    if (prev > 480 && this.remainingTime <= 480) {
-      ev('swarm1', () => this._spawnSwarm(60));
-    }
-    if (prev > 300 && this.remainingTime <= 300) {
-      ev('boss1', () => this._spawnBoss());
-    }
-    if (prev > 180 && this.remainingTime <= 180) {
-      ev('swarm2', () => this._spawnSwarm(80));
-    }
-    if (prev > 90 && this.remainingTime <= 90) {
-      ev('portal', () => this._spawnPortal());
-    }
-    if (prev > 30 && this.remainingTime <= 30) {
-      ev('boss2', () => this._spawnBoss());
-    }
-    if (prev > 0 && this.remainingTime <= 0) {
-      ev('final_swarm', () => {
-        this._finalSwarmStart = Date.now();
-        if (this._announce) this._announce('Final Swarm!');
-      });
-    }
+    if (prev > 480 && this.remainingTime <= 480) ev('swarm1', () => this._spawnSwarm(60));
+    if (prev > 300 && this.remainingTime <= 300) ev('boss1', () => this._spawnBoss());
+    if (prev > 180 && this.remainingTime <= 180) ev('swarm2', () => this._spawnSwarm(80));
+    if (prev > 90 && this.remainingTime <= 90) ev('portal', () => this._spawnPortal());
+    if (prev > 30 && this.remainingTime <= 30) ev('boss2', () => this._spawnBoss());
+    if (prev > 0 && this.remainingTime <= 0) ev('final_swarm', () => {
+      this._finalSwarmStart = Date.now();
+      if (this._announce) this._announce('Final Swarm!');
+    });
 
-    // After time reaches 0, escalate swarms each minute
     if (this.remainingTime <= 0) {
       const minutesPast = Math.floor((-this.remainingTime) / 60);
       if (!this._lastFinalMinute || minutesPast > this._lastFinalMinute) {
@@ -911,81 +706,24 @@ export class GameScene extends Phaser.Scene {
   }
 
   _startBgm() {
-    /* 
-    this.bgm = this.sound.add('bgm', { volume: 1.0 });
-    this.bgm = this.sound.add('bgm_loop', { volume: 1.0 });
-  
-    this.bgm.once('complete', () => {
-      if (this.bgm) {
-        this.bgm.play({ loop: true, seek: 11.7, volume: this._bgmTargetVolume || 1.0 });
-      }
-    });
-    this._bgmTargetVolume = 1.0;
-    this.bgm.play({ loop: false, seek: 0, volume: this._bgmTargetVolume });
-      
-    // if (this.bgm && this.big.isPlaying) return;
-  
-    this.bgm = this.sound.add('bgm', {
-      loop: true,
-      volume: 0.4,
-    });
-  
-    this.bgm.play();
-    */
-
-    // Don't restart if already running
     if (this.bgmIntro?.isPlaying || this.bgmLoop?.isPlaying) return;
-
     const vol = this._bgmTargetVolume ?? 1.0;
-
-    // Clean up any old instances
-    if (this.bgmIntro) {
-      this.bgmIntro.stop();
-      this.bgmIntro.destroy();
-    }
-    if (this.bgmLoop) {
-      this.bgmLoop.stop();
-      this.bgmLoop.destroy();
-    }
-
-    // Intro: plays once
-    this.bgmIntro = this.sound.add('bgm', {
-      loop: false,
-      volume: vol,
-    });
-
-    // Loop: will run forever after intro completes
-    this.bgmLoop = this.sound.add('bgm_loop', {
-      loop: true,
-      volume: vol,
-    });
-
-    // When intro finishes, start the loop track
-    this.bgmIntro.once('complete', () => {
-      if (!this.bgmLoop) return;
-      this.bgmLoop.play();  // Loop endlessly
-    });
-
-    // Start the intro track
+    if (this.bgmIntro) { this.bgmIntro.stop(); this.bgmIntro.destroy(); }
+    if (this.bgmLoop) { this.bgmLoop.stop(); this.bgmLoop.destroy(); }
+    this.bgmIntro = this.sound.add('bgm', { loop: false, volume: vol });
+    this.bgmLoop = this.sound.add('bgm_loop', { loop: true, volume: vol });
+    this.bgmIntro.once('complete', () => { if (this.bgmLoop) this.bgmLoop.play(); });
     this.bgmIntro.play();
   }
 
   _updateBgmVolume(dt) {
     if (!this.bgmIntro && !this.bgmLoop) return;
-
     const current = this._bgmCurrentVolume ?? 0;
     const target = this._bgmTargetVolume ?? 1.0;
     const speed = 2.5;
-
-    // If dt is provided (from update loop), do a smooth lerp.
-    // If dt is missing (called from ESC/level-up), jump straight to target
-    const t = (typeof dt === 'number')
-      ? Math.min(1, speed * dt)
-      : 1;  // instant set
-
+    const t = (typeof dt === 'number') ? Math.min(1, speed * dt) : 1;
     const next = current + (target - current) * t;
     this._bgmCurrentVolume = next;
-
     if (this.bgmIntro) this.bgmIntro.setVolume(next);
     if (this.bgmLoop) this.bgmLoop.setVolume(next);
   }
@@ -993,13 +731,12 @@ export class GameScene extends Phaser.Scene {
   _spawnBoss() {
     const e = this.enemyPool.spawnAround(this.player.pos);
     if (!e) return;
-    // Inflate boss stats
     e.hpMax = e.hp = ENEMIES.hp * 25;
     e.speed = ENEMIES.speed * 0.8;
     e.rect.width = ENEMIES.size * 2.0;
     e.rect.height = ENEMIES.size * 2.0;
     e.radius = (ENEMIES.size * 2.0) / 2;
-    e.rect.setFillStyle(0x8a2be2); // purple
+    e.rect.setFillStyle(0x8a2be2);
     e.isBoss = true;
     this._finalBossAlive = true;
     this._announce && this._announce('Boss Approaches');
@@ -1018,48 +755,26 @@ export class GameScene extends Phaser.Scene {
     this.levelUpActive = true;
     this.gamePaused = true;
     this.tweens.pauseAll();
-
-    this._bgmTargetVolume = 0.4;  // dim for level-up UI
+    this._bgmTargetVolume = 0.4;
     this._updateBgmVolume();
 
-    const choices = pickDraft(this.draftRng, this.player.statsCounters, 3);
-
-    // If no normal upgrades available, offer utility choices
+    const choices = pickDraft(this, this.player, 3);
     let finalChoices = choices;
     if (!choices || choices.length === 0) {
-      finalChoices = [
-        { id: 'heal30', kind: 'heal', tier: 'rare', text: 'Heal 30% HP', lanes: ['heal'], healPct: 0.30 },
-        { id: 'reroll1', tier: 'common', text: '+1 Reroll', lanes: [], apply: () => { this.rerollsLeft++; } },
-        { id: 'heal10', kind: 'heal', tier: 'rare', text: 'Heal 10% HP', lanes: ['heal'], healPct: 0.10 },
-      ];
+      finalChoices = [{ type: 'heal', name: 'Full Heal', desc: 'Heal 100%', id: 'heal' }];
     }
+
     this.levelUpUI = new LevelUpUI(this, {
       choices: finalChoices,
       onChoose: (upg) => {
-        // Handle heal-type cards immediately
-        if (upg && upg.kind === 'heal' && upg.healPct) {
-          const before = this.player.hp;
-          this.player.hp = Math.min(this.player.hpMax, this.player.hp + this.player.hpMax * upg.healPct);
-          const healed = Math.max(0, Math.round(this.player.hp - before));
-          if (healed > 0) this._damageNumber(this.player.pos.x, this.player.pos.y - 14, healed, false, false /*isPlayer*/, true);
-        }
-        // Apply stat upgrades if present
-        if (typeof upg.apply === 'function') {
-          upg.apply(this.player.stats);
-        }
-        for (const lane of (upg.lanes || [])) this.player.statsCounters[lane]++;
-        this._closeLevelUpDraft();
+        this._selectUpgrade(upg);
       },
       onReroll: () => {
         if (this.rerollsLeft <= 0) return;
         this.rerollsLeft--;
-        let newChoices = pickDraft(this.draftRng, this.player.statsCounters, 3);
+        let newChoices = pickDraft(this, this.player, 3);
         if (!newChoices || newChoices.length === 0) {
-          newChoices = [
-            { id: 'heal30', kind: 'heal', tier: 'rare', text: 'Heal 30% HP', lanes: ['heal'], healPct: 0.30 },
-            { id: 'reroll1', tier: 'common', text: '+1 Reroll', lanes: [], apply: () => { this.rerollsLeft++; } },
-            { id: 'heal10', kind: 'heal', tier: 'rare', text: 'Heal 10% HP', lanes: ['heal'], healPct: 0.10 },
-          ];
+          newChoices = [{ type: 'heal', name: 'Full Heal', desc: 'Heal 100%', id: 'heal' }];
         }
         this.levelUpUI.updateChoices(newChoices);
       },
@@ -1067,16 +782,24 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
+  _selectUpgrade(opt) {
+    if (opt.type === 'new_weapon' || opt.type === 'weapon_upgrade') {
+      this.weaponManager.addWeapon(opt.id);
+    } else if (opt.type === 'new_talent' || opt.type === 'talent_upgrade') {
+      this.upgradeManager.applyTalent(opt.id);
+    } else if (opt.id === 'heal') {
+      this.player.heal(this.player.hpMax);
+    }
+    this._closeLevelUpDraft();
+  }
+
   _closeLevelUpDraft() {
     if (this.levelUpUI) { this.levelUpUI.destroy(); this.levelUpUI = null; }
     this.levelUpActive = false;
-    this.gamePaused = this._pausedByUser; // resume if not user-paused
+    this.gamePaused = this._pausedByUser;
     if (!this.gamePaused) this.tweens.resumeAll();
-
     this._bgmTargetVolume = (this.gamePaused || this.levelUpActive) ? 0.4 : 1.0;
     this._updateBgmVolume();
-
-    // If multiple level-ups queued, open next immediately
     if (this.pendingLevelUps > 0) { this.pendingLevelUps--; this._openLevelUpDraft(); }
   }
 
@@ -1084,17 +807,13 @@ export class GameScene extends Phaser.Scene {
     const cam = this.cameras.main;
     const pad = 128;
     const view = { x: cam.worldView.x - pad, y: cam.worldView.y - pad, w: cam.worldView.width + pad * 2, h: cam.worldView.height + pad * 2 };
-    // Query candidates via grid
     const candidates = this.obstacleGrid.query(view, []);
-    // Toggle visibility for candidates; simple approach sets others visible too, but to avoid massive loops
-    // we only toggle candidates and assume off-camera items remain invisible after first pass.
     for (let i = 0; i < candidates.length; i++) {
       const o = candidates[i];
       const inside = !(o.aabb.x + o.aabb.w < view.x || o.aabb.x > view.x + view.w || o.aabb.y + o.aabb.h < view.y || o.aabb.y > view.y + view.h);
       o.display.setVisible(inside || !this.debugCulling);
     }
     if (!this._hasCulledOnce) {
-      // First-time pass: hide everything not in view for performance
       const visibleSet = new Set(candidates);
       for (let i = 0; i < this.obstacles.length; i++) {
         const o = this.obstacles[i];
@@ -1108,19 +827,15 @@ export class GameScene extends Phaser.Scene {
     const g = this.debugGfx;
     g.clear();
     const cam = this.cameras.main;
-    // Camera rect
     if (this.debugCulling) {
       g.lineStyle(1, 0xffffff, 0.6);
       g.strokeRect(cam.worldView.x, cam.worldView.y, cam.worldView.width, cam.worldView.height);
     }
-
-    // Player HP text
     g.lineStyle(0);
     const hpPct = this.player.hp / this.player.hpMax;
     g.fillStyle(0x2ecc71, 0.8);
     g.fillRect(this.player.pos.x - 12, this.player.pos.y - 22, 24 * clamp(hpPct, 0, 1), 3);
 
-    // Collision debug: draw player AABB and obstacle candidates near camera
     if (this.debugCollisions) {
       const a = this.player.getAabb();
       g.lineStyle(1, 0x00ffff, 0.8);
@@ -1134,7 +849,6 @@ export class GameScene extends Phaser.Scene {
         g.strokeRect(o.aabb.x, o.aabb.y, o.aabb.w, o.aabb.h);
       }
     }
-
     if (this.debugProjectiles) {
       g.lineStyle(1, 0x4cc9f0, 0.8);
       for (let id = 0; id < this.projectiles.alive.length; id++) {
@@ -1144,7 +858,6 @@ export class GameScene extends Phaser.Scene {
         g.strokeCircle(p.x, p.y, r);
       }
     }
-
     if (this.debugXP) {
       g.lineStyle(1, 0x38b000, 0.8);
       g.strokeCircle(this.player.pos.x, this.player.pos.y, this.player.magnetRadius);
@@ -1193,25 +906,20 @@ export class GameScene extends Phaser.Scene {
   }
 
   _resolvePlayerEnemyCollisions() {
-    const pr = 12; // approximate player radius
+    const pr = 12;
     for (let i = 0; i < this.enemyPool.active.length; i++) {
       const e = this.enemyPool.active[i];
       if (!e.alive || e.isSpawning) continue;
-      // Use AABB contact to ensure no overlap between bodies
       const pa = this.player.getAabb();
       const er = e.radius;
       const ea = { x: e.pos.x - er, y: e.pos.y - er, w: er * 2, h: er * 2 };
       if (aabbIntersects(pa, ea)) {
-        // Stop enemy motion on contact
         e.vel.x = 0; e.vel.y = 0;
         const mtvX = aabbOverlapX(pa, ea);
         const mtvY = aabbOverlapY(pa, ea);
-        // Resolve along the smallest axis by splitting resolution between player and enemy
         if (Math.abs(mtvX) < Math.abs(mtvY)) {
           const half = mtvX * 0.5;
-          // Move player by half (respecting terrain)
           this.player.resolveCollisions(this.obstacleGrid, this.obstacles, half, 0);
-          // Move enemy by the other half (respecting terrain)
           if (typeof e.pushBy === 'function') e.pushBy(-half, 0, this.obstacleGrid);
           this.player.vel.x = 0; this.player.vel.y = 0;
         } else {
@@ -1224,20 +932,33 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  _spawnDifficultyShrines(n = 5) {
+  _spawnDifficultyShrines(count) {
+    const rng = new RNG(12345);
     this.shrines = [];
-    for (let i = 0; i < n; i++) {
-      const x = Math.random() * WORLD.width;
-      const y = Math.random() * WORLD.height;
-      const s = this.add.rectangle(x, y, 20, 20, 0xff00ff).setOrigin(0.5).setDepth(3);
-      s.rotation = Math.PI / 4; // diamond
-      const label = this.add.text(x, y - 18, 'E', { fontFamily: 'monospace', fontSize: 10, color: '#ff99ff' }).setOrigin(0.5).setDepth(3);
-      this.shrines.push({ x, y, sprite: s, label, radius: 36, active: true });
+    for (let i = 0; i < count; i++) {
+      const x = rng.int(100, WORLD.width - 100);
+      const y = rng.int(100, WORLD.height - 100);
+      this.shrines.push(new Shrine(this, x, y, i));
     }
   }
 
+  _tryInteractShrine() {
+    const p = this.player;
+    let interacted = false;
+    for (const s of this.shrines) {
+      const dx = p.pos.x - s.pos.x;
+      const dy = p.pos.y - s.pos.y;
+      if (dx * dx + dy * dy < 60 * 60) {
+        if (s.interact()) {
+          interacted = true;
+          break;
+        }
+      }
+    }
+    return interacted;
+  }
+
   _tryInteract() {
-    // Portal activation
     if (this._portal && this._portal.active) {
       const dx = this._portal.x - this.player.pos.x;
       const dy = this._portal.y - this.player.pos.y;
@@ -1246,17 +967,6 @@ export class GameScene extends Phaser.Scene {
         this._portal.sprite.setVisible(false);
         this._spawnFinalBoss();
         return;
-      }
-    }
-    // Difficulty shrines
-    for (const sh of (this.shrines || [])) {
-      if (!sh.active) continue;
-      const dx = sh.x - this.player.pos.x;
-      const dy = sh.y - this.player.pos.y;
-      if (dx * dx + dy * dy <= sh.radius * sh.radius) {
-        sh.active = false; sh.sprite.setVisible(false); sh.label.setVisible(false);
-        this.difficultyLevel++;
-        break;
       }
     }
   }
@@ -1269,16 +979,20 @@ export class GameScene extends Phaser.Scene {
     e.rect.width = ENEMIES.size * 2.5;
     e.rect.height = ENEMIES.size * 2.5;
     e.radius = (ENEMIES.size * 2.5) / 2;
-    e.rect.setFillStyle(0xff6b6b); // red boss
+    e.rect.setFillStyle(0xff6b6b);
     e.isBoss = true;
     e.isFinal = true;
     this._finalBossAlive = true;
   }
+
+  _updateDebugText() {
+    if (!this.debugText) return;
+    const d = this.difficulty;
+    this.debugText.setText(
+      `Time: ${(d.timeSeconds / 60).toFixed(1)}m\n` +
+      `Danger: ${d.danger.toFixed(2)}\n` +
+      `Shrines: ${d.shrineCount}\n` +
+      `Enemies: ${this.enemyPool.active.length}`
+    );
+  }
 }
-
-
-
-
-
-
-

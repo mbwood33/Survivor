@@ -26,25 +26,23 @@ export class PlayerController {
     this.collider = { w: PLAYER.size, h: PLAYER.size, ox: -PLAYER.size / 2, oy: -PLAYER.size / 2 };
 
     // Combat/XP baselines
-    this.hpMax = PLAYER.hpMax;
+    this.hpMax = PLAYER.hp;
     this.hp = this.hpMax;
-    this.level = 1;
+    this.shield = 0; // Current shield
+    this.regenTimer = 0;
+    this.shieldRegenTimer = 0;
+
     this.xp = 0;
+    this.level = 1;
     this.xpForNext = 10;
     this.pickupRadius = PLAYER.pickupRadius;
     this.magnetRadius = PLAYER.magnetRadius;
     this.magnetPullSpeed = PLAYER.magnetPullSpeed;
 
     // Weapon base stats (basic straight projectile)
-    this.baseProjDamage = PLAYER.projDamage;
-    this.baseProjSpeed = PLAYER.projSpeed;
-    this.baseProjLifetime = PLAYER.projLifetime;
-    this.baseFireCooldown = PLAYER.fireCooldown;
-    this.baseProjectilesPerVolley = PLAYER.projectilesPerVolley;
-    this.baseSpreadDeg = PLAYER.spreadDeg;
-    this.fireTimer = 0;
-    this.lastAimDir = vec2(1, 0);
-    this.volleyPhase = 0; // rotates radial firing when no target
+    // REMOVED: Handled by WeaponManager now
+    // this.baseProjDamage = PLAYER.projDamage;
+    // ...
 
     // Stats
     this.stats = createDefaultStats();
@@ -56,6 +54,8 @@ export class PlayerController {
 
     // Temp arrays reused per step to avoid GC
     this._candidates = [];
+
+    this.invulnTime = 0; // Time player is invulnerable after taking damage
   }
 
   getAabb() {
@@ -149,103 +149,159 @@ export class PlayerController {
     const dx = this.vel.x * dt;
     const dy = this.vel.y * dt;
     this.resolveCollisions(obstacleGrid, obstacles, dx, dy);
+
+    // Invulnerability timer
+    if (this.invulnTime > 0) {
+      this.invulnTime -= dt;
+      if (this.invulnTime < 0) this.invulnTime = 0;
+    }
+
+    // Regen Logic
+    if (this.stats.regen > 0 && this.hp < this.hpMax) {
+      this.regenTimer += dt;
+      if (this.regenTimer >= 1.0) {
+        this.heal(this.stats.regen);
+        this.regenTimer = 0;
+      }
+    }
+
+    // Shield Logic
+    // "Barrier: Adds/increases shield - shield takes damage instead of player... shield regenerates quickly after not taking damage for a while"
+    if (this.stats.maxShield > 0) {
+      if (this.shield < this.stats.maxShield) {
+        this.shieldRegenTimer -= dt;
+        if (this.shieldRegenTimer <= 0) {
+          // Regenerate 10% of max shield per second? Or flat?
+          // Spec says "regenerates quickly". Let's do 20% per sec.
+          this.shield = Math.min(this.stats.maxShield, this.shield + this.stats.maxShield * 0.2 * dt);
+        }
+      }
+    }
+
+    // Update max HP based on stats
+    const targetMaxHp = Math.floor(PLAYER.hp * (this.stats.maxHpMult || 1));
+    if (this.hpMax !== targetMaxHp) {
+      const pct = this.hp / this.hpMax;
+      this.hpMax = targetMaxHp;
+      this.hp = Math.floor(this.hpMax * pct); // Maintain percentage
+    }
+
+    // Visuals
     this.rect.setPosition(this.pos.x, this.pos.y);
+
+    // Shield visual (blue outline or overlay)
+    if (this.shield > 0) {
+      this.rect.setStrokeStyle(2, 0x00ffff, 0.8);
+    } else {
+      this.rect.setStrokeStyle(0);
+    }
   }
 
-  // Auto-fire towards nearest enemies; each projectile picks a target if available.
-  tryAutoFire(dt, enemyQueryFn, projectilePool) {
-    this.fireTimer -= dt;
-    const baseWeapon = {
-      damage: this.baseProjDamage,
-      speed: this.baseProjSpeed,
-      lifetime: this.baseProjLifetime,
-      cooldown: this.baseFireCooldown,
-      amount: this.baseProjectilesPerVolley,
-      size: 1.0,
-      pierce: 0,
-      critChance: 0.0,
-    };
-    const resolved = resolveShot(baseWeapon, this.stats);
-    if (this.fireTimer > 0) return;
-    this.fireTimer += resolved.cooldown;
-
-    // Aim determination
+  // tryAutoFire removed. WeaponManager handles this.
+  updateAim(dt, enemyQueryFn) {
+    // We still need to track aim direction for some weapons
     const target = enemyQueryFn(this.pos.x, this.pos.y);
-    let aim = this.lastAimDir;
-      if (target) {
+    if (target) {
       const dx = target.pos.x - this.pos.x;
       const dy = target.pos.y - this.pos.y;
       const len = Math.hypot(dx, dy);
       if (len > 1e-5) {
-        aim = { x: dx / len, y: dy / len };
-        this.lastAimDir = { x: aim.x, y: aim.y };
+        this.lastAimDir = { x: dx / len, y: dy / len };
       }
-    } else if (aim.x === 0 && aim.y === 0) {
-      aim = { x: 1, y: 0 };
+    } else if (Math.abs(this.vel.x) > 10 || Math.abs(this.vel.y) > 10) {
+      // If moving and no target, aim forward? Or keep last?
+      // Usually keep last known good aim or move dir.
+      // Let's keep lastAimDir as is, but maybe update it if moving?
+      // Actually, let's just update lastAimDir to movement if no target.
+      const len = Math.hypot(this.vel.x, this.vel.y);
+      this.lastAimDir = { x: this.vel.x / len, y: this.vel.y / len };
     }
-
-    const count = resolved.amount;
-    const radius = PROJECTILES.radius * resolved.size;
-    const maxDistance = resolved.speed * resolved.lifetime;
-
-    if (target) {
-      // Per-projectile targeting of nearest enemies
-      const targets = this.scene._findNearestEnemies(this.pos.x, this.pos.y, 900, count);
-      for (let i = 0; i < count; i++) {
-        const tgt = targets.length > 0 ? targets[i % targets.length] : target;
-        const dx = tgt.pos.x - this.pos.x;
-        const dy = tgt.pos.y - this.pos.y;
-        const len = Math.hypot(dx, dy) || 1;
-        const dir = { x: dx / len, y: dy / len };
-        projectilePool.spawn(
-          this.pos.x,
-          this.pos.y,
-          dir.x * resolved.speed,
-          dir.y * resolved.speed,
-          resolved.damage,
-          resolved.lifetime,
-          { collidesTerrain: true, radius, critChance: resolved.critChance, critMult: resolved.critMult, pierce: resolved.pierce, maxDistance }
-        );
-      }
-      } else {
-      // No target: emit evenly around the player; rotate phase each volley
-      const step = (Math.PI * 2) / count;
-      for (let i = 0; i < count; i++) {
-        const ang = this.volleyPhase + i * step;
-        const dir = { x: Math.cos(ang), y: Math.sin(ang) };
-        projectilePool.spawn(
-          this.pos.x,
-          this.pos.y,
-          dir.x * resolved.speed,
-          dir.y * resolved.speed,
-          resolved.damage,
-          resolved.lifetime,
-          { collidesTerrain: true, radius, critChance: resolved.critChance, critMult: resolved.critMult, pierce: resolved.pierce, maxDistance }
-        );
-      }
-        this.volleyPhase += 0.35;
-      }
-      // Play shoot SFX once per volley (not per projectile)
-      if (this.scene && this.scene.sound) {
-        this.scene.sound.play('sfx_shoot', { volume: 0.3 });
-      }
-    }
+  }
 
   addXP(value) {
-    this.xp += value;
-    // Simple curve
-    const need = Math.floor(10 + (this.level - 1) * 5 + Math.pow(this.level - 1, 1.2));
-    this.xpForNext = Math.max(1, need);
-    while (this.xp >= this.xpForNext) {
+    // Enlighten: Gives you more XP from all sources
+    const mult = this.stats.xpMult || 1.0;
+    this.xp += value * mult;
+    if (this.xp >= this.xpForNext) {
       this.xp -= this.xpForNext;
       this.level++;
-      const n2 = Math.floor(10 + (this.level - 1) * 5 + Math.pow(this.level - 1, 1.2));
-      this.xpForNext = Math.max(1, n2);
+      this.xpForNext = Math.floor(this.xpForNext * 1.5); // Simplified curve for now
       if (this.scene && this.scene.events) this.scene.events.emit('player:levelup', this);
     }
   }
 
   damage(amount) {
-    this.hp = Math.max(0, this.hp - amount);
+    if (this.invulnTime > 0) return;
+
+    // Dodge check
+    if (this.stats.dodge > 0 && Math.random() < this.stats.dodge) {
+      // Dodged!
+      this.scene._floatText(this.pos.x, this.pos.y - 20, "DODGE", 0xaaaaaa);
+      return;
+    }
+
+    // Armor reduction
+    // "Fortify: Increases armor/reduces damage taken"
+    // Let's say armor is flat reduction, or percentage?
+    // Spec says "Increases armor/reduces damage taken".
+    // Let's implement armor as flat reduction, min 1 damage.
+    let taken = Math.max(1, amount - (this.stats.armor || 0));
+
+    // Shield absorption
+    if (this.shield > 0) {
+      if (this.shield >= taken) {
+        this.shield -= taken;
+        taken = 0;
+      } else {
+        taken -= this.shield;
+        this.shield = 0;
+      }
+      this.shieldRegenTimer = 3.0; // Reset regen delay (3 seconds)
+    }
+
+    if (taken > 0) {
+      this.hp -= taken;
+      this.invulnTime = PLAYER.invulnTime;
+      this.scene.cameras.main.shake(100, 0.01);
+      this.scene._spawnHitParticles(this.pos.x, this.pos.y, false); // Player hit particles?
+
+      // Reflect damage
+      if (this.stats.reflect > 0) {
+        // Deal damage back to attackers? 
+        // We don't have reference to attacker here easily unless passed.
+        // For now, maybe spawn a "Thorns" AoE?
+        // Or just ignore for now as it requires architectural change to pass attacker.
+        // Let's spawn a small AoE blast around player for reflect.
+        this.scene.aoePool.spawn(this.pos.x, this.pos.y, {
+          type: 'sunflare', // Reuse sunflare visual
+          damage: taken * this.stats.reflect,
+          radius: 100,
+          duration: 0.2
+        });
+      }
+    }
+
+    if (this.hp <= 0) {
+      this.hp = 0;
+      this.scene.gameOver();
+    }
+  }
+
+  heal(amount) {
+    this.hp = Math.min(this.hpMax, this.hp + amount);
+    this.scene._damageNumber(this.pos.x, this.pos.y - 20, amount, false, false, true);
+  }
+
+  onHitEnemy() {
+    // Life Steal check
+    if (this.stats.lifeSteal > 0) {
+      if (Math.random() < this.stats.lifeSteal) {
+        this.heal(1);
+      }
+      // "Over 100% will guarantee 1 heal, and give a chance to heal for a total of 2."
+      if (this.stats.lifeSteal > 1.0 && Math.random() < (this.stats.lifeSteal - 1.0)) {
+        this.heal(1);
+      }
+    }
   }
 }

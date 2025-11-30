@@ -24,16 +24,34 @@ export class Enemy {
     this.rect.setStrokeStyle(1, 0x000000, 0.8);
     this.rect.setDepth(5);
     this.rect.setVisible(false);
-    this.hpBarBg = scene.add.rectangle(0, -ENEMIES.size*0.7, ENEMIES.size, 3, 0x111111).setOrigin(0.5).setVisible(false).setDepth(6);
-    this.hpBarFg = scene.add.rectangle(0, -ENEMIES.size*0.7, ENEMIES.size, 3, 0xff2a6d).setOrigin(0.5).setVisible(false).setDepth(7);
+    this.hpBarBg = scene.add.rectangle(0, -ENEMIES.size * 0.7, ENEMIES.size, 3, 0x111111).setOrigin(0.5).setVisible(false).setDepth(6);
+    this.hpBarFg = scene.add.rectangle(0, -ENEMIES.size * 0.7, ENEMIES.size, 3, 0xff2a6d).setOrigin(0.5).setVisible(false).setDepth(7);
   }
 
   spawn(x, y, opts = {}) {
     this.alive = true;
     this.pos.x = x; this.pos.y = y;
-    // Reset to base then apply multipliers
-    this.hpMax = ENEMIES.hp;
-    if (opts.hpMult != null) { this.hpMax = Math.max(1, Math.floor(ENEMIES.hp * opts.hpMult)); }
+
+    // Difficulty Scaling
+    const difficulty = this.scene.difficulty;
+    const baseHp = ENEMIES.hp;
+    const baseDmg = 3; // Default contact damage
+
+    // Apply difficulty scaling if available
+    let scaledHp = baseHp;
+    let scaledDmg = baseDmg;
+
+    if (difficulty) {
+      scaledHp = difficulty.getEnemyHp(baseHp);
+      scaledDmg = difficulty.getEnemyDamage(baseDmg);
+    }
+
+    // Apply multipliers from opts
+    this.hpMax = scaledHp;
+    if (opts.hpMult != null) { this.hpMax = Math.max(1, Math.floor(this.hpMax * opts.hpMult)); }
+
+    this.damage = scaledDmg; // Store damage for contact logic
+
     if (opts.speedMult != null) { this.speed = ENEMIES.speed * opts.speedMult; } else { this.speed = ENEMIES.speed; }
     if (opts.sizeMult != null) {
       const size = ENEMIES.size * opts.sizeMult;
@@ -49,8 +67,8 @@ export class Enemy {
     this.rect.setPosition(x, y);
     this.rect.setFillStyle(ENEMIES.color);
     this.rect.setVisible(true);
-    this.hpBarBg.setPosition(x, y - this.rect.height*0.7).setVisible(!!opts.isBoss);
-    this.hpBarFg.setPosition(x, y - this.rect.height*0.7).setVisible(!!opts.isBoss);
+    this.hpBarBg.setPosition(x, y - this.rect.height * 0.7).setVisible(!!opts.isBoss);
+    this.hpBarFg.setPosition(x, y - this.rect.height * 0.7).setVisible(!!opts.isBoss);
     // Spawn animation: stationary and harmless until finished
     this.isSpawning = true;
     this.canDamage = false;
@@ -82,8 +100,8 @@ export class Enemy {
       // Align visuals during spawn
       this.rect.setPosition(this.pos.x, this.pos.y);
       if (this.hpBarBg.visible) {
-        this.hpBarBg.setPosition(this.pos.x, this.pos.y - this.rect.height*0.7);
-        this.hpBarFg.setPosition(this.pos.x, this.pos.y - this.rect.height*0.7);
+        this.hpBarBg.setPosition(this.pos.x, this.pos.y - this.rect.height * 0.7);
+        this.hpBarFg.setPosition(this.pos.x, this.pos.y - this.rect.height * 0.7);
       }
       return;
     }
@@ -160,8 +178,8 @@ export class Enemy {
     if (this.hpBarBg.visible) {
       const w = this.rect.width;
       const pct = Math.max(0, Math.min(1, this.hp / this.hpMax));
-      this.hpBarBg.setPosition(this.pos.x, this.pos.y - this.rect.height*0.7);
-      this.hpBarFg.setPosition(this.pos.x - w*(1-pct)/2, this.pos.y - this.rect.height*0.7).setSize(w * pct, 3);
+      this.hpBarBg.setPosition(this.pos.x, this.pos.y - this.rect.height * 0.7);
+      this.hpBarFg.setPosition(this.pos.x - w * (1 - pct) / 2, this.pos.y - this.rect.height * 0.7).setSize(w * pct, 3);
     }
 
     if (this.onHitTintTimer > 0) {
@@ -225,5 +243,9 @@ export class Enemy {
     // Briefly brighten on hit
     this.rect.setFillStyle(0xff6b6b);
     return this.hp <= 0;
+  }
+
+  push(dx, dy) {
+    this.pushBy(dx, dy, this.scene.obstacleGrid);
   }
 }
