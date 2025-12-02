@@ -67,7 +67,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     // Load tileset for procedural map
-    this.load.image('tileset', 'assets/sprites/tiles/abstract_tile_set_16x16.png');
+    this.load.image('tileset', 'assets/sprites/tiles/grass_tileset_16x16.png');
 
     this.load.audio('sfx_hoard', '/assets/sfx/SFX-000-Hoard-Spawn.mp3');
     this.load.audio('sfx_shoot', '/assets/sfx/SFX-001-Player-Projectile-01.mp3');
@@ -95,13 +95,22 @@ export class GameScene extends Phaser.Scene {
     const mapWidth = Math.ceil(WORLD.width / 16);
     const mapHeight = Math.ceil(WORLD.height / 16);
     const mapGen = new MapGenerator(mapWidth, mapHeight, 16);
-    const mapData = mapGen.generate();
+    const { base, overlay } = mapGen.generate();
 
-    // Create Tilemap
-    const map = this.make.tilemap({ data: mapData, tileWidth: 16, tileHeight: 16 });
+    // Create Tilemap (Blank)
+    const map = this.make.tilemap({ tileWidth: 16, tileHeight: 16, width: mapWidth, height: mapHeight });
     const tileset = map.addTilesetImage('tileset', 'tileset', 16, 16, 0, 0);
-    const layer = map.createLayer(0, tileset, 0, 0);
-    this.bgLayer.add(layer);
+
+    // Create Layers
+    const baseLayer = map.createBlankLayer('base', tileset);
+    const overlayLayer = map.createBlankLayer('overlay', tileset);
+
+    // Populate Layers
+    // Note: putTilesAt is efficient enough for this size
+    baseLayer.putTilesAt(base, 0, 0);
+    overlayLayer.putTilesAt(overlay, 0, 0);
+
+    this.bgLayer.add([baseLayer, overlayLayer]);
 
     // Player spawn at world center
     this.player = new PlayerController(this, WORLD.width / 2, WORLD.height / 2);

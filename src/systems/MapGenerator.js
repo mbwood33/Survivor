@@ -70,7 +70,49 @@ export class MapGenerator {
         // 4. Cleanup (Cut bridges, eat tails, remove dust)
         this.cleanupMap();
 
-        return this.generateLayerData();
+        return this.generateLayers();
+    }
+
+    // ... (keep smoothBiomes, smoothMap, cleanupMap, prune*, getAliveNeighborCount, psuedoRandom, cell, getAutotileID as is)
+
+    generateLayers() {
+        // Returns objects with 2D arrays for base and overlay layers
+        const base = [];
+        const overlay = [];
+
+        for (let y = 0; y < this.height; y++) {
+            const baseRow = [];
+            const overlayRow = [];
+
+            for (let x = 0; x < this.width; x++) {
+                const biomeOffset = this.biomeGrid[y][x];
+
+                // 1. Base Layer: Always Dirt/Sand
+                let randIndex = Math.floor(this.psuedoRandom(x, y) * 3);
+                let validSandIds = this.SAND_TILES[biomeOffset] || this.SAND_TILES[0];
+                baseRow.push(validSandIds[randIndex]);
+
+                // 2. Overlay Layer: Grass or Empty
+                if (this.grid[y][x] === 1) {
+                    // Grass
+                    let genericId = this.getAutotileID(x, y);
+                    let tileId = genericId + biomeOffset;
+
+                    // Apply Variance to Solid Grass (Generic ID 0)
+                    if (genericId === 0) {
+                        let grassVariant = Math.floor(this.psuedoRandom(x, y) * 3); // 0, 1, 2
+                        tileId += (grassVariant * 16); // +0, +16, or +32
+                    }
+                    overlayRow.push(tileId);
+                } else {
+                    // Empty
+                    overlayRow.push(-1);
+                }
+            }
+            base.push(baseRow);
+            overlay.push(overlayRow);
+        }
+        return { base, overlay };
     }
 
     smoothBiomes() {
@@ -276,35 +318,5 @@ export class MapGenerator {
         return finalId;
     }
 
-    generateLayerData() {
-        // Returns a 2D array of tile indices for Phaser Tilemap
-        const layerData = [];
-        for (let y = 0; y < this.height; y++) {
-            const row = [];
-            for (let x = 0; x < this.width; x++) {
-                const biomeOffset = this.biomeGrid[y][x];
-                let tileId = 0;
 
-                if (this.grid[y][x] === 1) {
-                    // Grass
-                    let genericId = this.getAutotileID(x, y);
-                    tileId = genericId + biomeOffset;
-
-                    // Apply Variance to Solid Grass (Generic ID 0)
-                    if (genericId === 0) {
-                        let grassVariant = Math.floor(this.psuedoRandom(x, y) * 3); // 0, 1, 2
-                        tileId += (grassVariant * 16); // +0, +16, or +32
-                    }
-                } else {
-                    // Dirt/Sand
-                    let randIndex = Math.floor(this.psuedoRandom(x, y) * 3);
-                    let validSandIds = this.SAND_TILES[biomeOffset] || this.SAND_TILES[0];
-                    tileId = validSandIds[randIndex];
-                }
-                row.push(tileId);
-            }
-            layerData.push(row);
-        }
-        return layerData;
-    }
 }

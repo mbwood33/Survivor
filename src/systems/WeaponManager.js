@@ -7,7 +7,6 @@ export class WeaponManager {
         this.player = player;
         this.activeWeapons = []; // Array of { def, level, stats, cooldownTimer, state }
         this.maxWeapons = 3;
-        this.accumulatedDistance = 0; // For Meteor Knuckle
         this.lastPos = { x: player.pos.x, y: player.pos.y };
     }
 
@@ -93,7 +92,6 @@ export class WeaponManager {
         const dx = this.player.pos.x - this.lastPos.x;
         const dy = this.player.pos.y - this.lastPos.y;
         const dist = Math.hypot(dx, dy);
-        this.accumulatedDistance += dist;
         this.lastPos.x = this.player.pos.x;
         this.lastPos.y = this.player.pos.y;
 
@@ -103,13 +101,30 @@ export class WeaponManager {
             // Let's use a simplified resolution here to avoid heavy object creation per frame.
 
             if (weapon.def.id === 'meteor_knuckle') {
-                this._updateMeteorKnuckle(weapon, dt);
+                this._updateMeteorKnuckle(weapon, dt, dist);
             } else {
                 weapon.cooldownTimer -= dt;
                 if (weapon.cooldownTimer <= 0) {
                     this._fireWeapon(weapon);
                 }
             }
+        }
+    }
+
+    _updateMeteorKnuckle(weapon, dt, dist) {
+        weapon.cooldownTimer -= dt; // Internal cooldown
+
+        // Init state if needed
+        if (weapon.state.accumulatedDistance === undefined) weapon.state.accumulatedDistance = 0;
+        weapon.state.accumulatedDistance += dist;
+
+        if (weapon.cooldownTimer > 0) return;
+
+        const threshold = weapon.stats.distance; // Distance needed
+        if (weapon.state.accumulatedDistance >= threshold) {
+            weapon.state.accumulatedDistance -= threshold;
+            this._fireSweeping(weapon, this.player.stats); // Reuse sweeping logic or custom
+            weapon.cooldownTimer = weapon.stats.cooldown;
         }
     }
 
@@ -141,25 +156,10 @@ export class WeaponManager {
         }
     }
 
-    _updateMeteorKnuckle(weapon, dt) {
-        weapon.cooldownTimer -= dt; // Internal cooldown
-        if (weapon.cooldownTimer > 0) return;
-
-        const threshold = weapon.stats.distance; // Distance needed
-        if (this.accumulatedDistance >= threshold) {
-            this.accumulatedDistance -= threshold;
-            this._fireSweeping(weapon, this.player.stats); // Reuse sweeping logic or custom
-            weapon.cooldownTimer = weapon.stats.cooldown;
-        }
-    }
-
     _getEffectiveStats(weapon, globalStats) {
         const s = weapon.stats;
         return {
             damage: s.damage * (globalStats.damage || 1),
-            amount: s.amount + (globalStats.projectileAmount || 0), // Global amount adds to all? Or just projectiles?
-            // Let's say global projectileAmount adds to everything for fun, or restrict it.
-            // The spec says "Quantity: Boosts number of projectiles, pulses, sweeps". So yes.
             amount: Math.floor(s.amount + (globalStats.projectileAmount || 0)),
             size: s.size * (globalStats.projSize || 1),
             speed: s.speed * (globalStats.projectileSpeed || 1),
@@ -181,15 +181,6 @@ export class WeaponManager {
 
         if (weapon.def.id === 'star_bolt') {
             // Star Bolt: Orbit then launch
-            // For now, let's just launch them outward in a burst for simplicity, 
-            // or implement the orbit logic in the projectile itself?
-            // The spec says "Orbiting darts that burst outward".
-            // Let's spawn them with a special behavior ID or just standard spread for now.
-            // To implement orbit properly, we need a new Projectile behavior.
-            // I'll implement a "delayed launch" or just standard burst for MVP.
-            // Spec: "When off cooldown, weapon spawns N small darts orbiting... After orbit time... launch"
-            // I'll spawn them with a 'star_bolt' behavior tag.
-
             for (let i = 0; i < stats.amount; i++) {
                 // Random angle for orbit start? Or evenly spaced?
                 const angle = (Math.PI * 2 * i) / stats.amount;

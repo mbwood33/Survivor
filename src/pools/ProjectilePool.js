@@ -130,7 +130,14 @@ export class ProjectilePool {
         } else if (!state.launched) {
           // Launch!
           state.launched = true;
-          const angle = Math.random() * Math.PI * 2;
+          // Target nearest enemy
+          const target = this.scene._findNearestEnemy(this.pos[id].x, this.pos[id].y, 600);
+          let angle;
+          if (target) {
+            angle = Math.atan2(target.pos.y - this.pos[id].y, target.pos.x - this.pos[id].x);
+          } else {
+            angle = Math.random() * Math.PI * 2;
+          }
           this.vel[id].x = Math.cos(angle) * opts.launchSpeed;
           this.vel[id].y = Math.sin(angle) * opts.launchSpeed;
         }
@@ -192,24 +199,19 @@ export class ProjectilePool {
         if (state.returnState === 0) { // Outbound
           if (this.travel[id] >= this.maxDistance[id]) {
             state.returnState = 1; // Start return
-            this.travel[id] = 0; // Reset travel for return trip? Or just track total?
-            // Calculate return velocity
-            // Moon Disc: curve? For now, straight back to player
-            // Spec: "Calculates a return angle... Base = angle back toward player... Offset = small random"
-            const player = this.scene.player;
-            const dx = player.pos.x - p.x;
-            const dy = player.pos.y - p.y;
-            const angle = Math.atan2(dy, dx);
-            const offset = (Math.random() - 0.5) * 0.5; // +/- ~15 deg
-            const speed = Math.hypot(v.x, v.y);
-            v.x = Math.cos(angle + offset) * speed;
-            v.y = Math.sin(angle + offset) * speed;
+            this.travel[id] = 0;
           }
         } else { // Returning
-          // Check if close to player to despawn
+          // continuously home in on player
           const player = this.scene.player;
           const dx = player.pos.x - p.x;
           const dy = player.pos.y - p.y;
+          const angle = Math.atan2(dy, dx);
+          const speed = Math.hypot(v.x, v.y);
+          v.x = Math.cos(angle) * speed;
+          v.y = Math.sin(angle) * speed;
+
+          // Check if close to player to despawn
           if (dx * dx + dy * dy < 30 * 30) {
             this.despawn(id); continue;
           }
