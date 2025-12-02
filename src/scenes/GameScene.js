@@ -473,12 +473,20 @@ export class GameScene extends Phaser.Scene {
   _enemyContactDamage(dt) {
     let totalDamage = 0;
     let hitCount = 0;
+    const pAabb = this.player.getAabb();
+
     for (let i = 0; i < this.enemyPool.active.length; i++) {
       const e = this.enemyPool.active[i];
       if (!e.alive || e.isSpawning || !e.canDamage) continue;
-      const dx = e.pos.x - this.player.pos.x, dy = e.pos.y - this.player.pos.y;
-      const rr = e.radius + 12;
-      if (dx * dx + dy * dy <= rr * rr) {
+
+      const eAabb = {
+        x: e.pos.x + e.collider.ox,
+        y: e.pos.y + e.collider.oy,
+        w: e.collider.w,
+        h: e.collider.h
+      };
+
+      if (aabbIntersects(pAabb, eAabb)) {
         totalDamage += (e.damage || 3);
         hitCount++;
       }
@@ -734,25 +742,48 @@ export class GameScene extends Phaser.Scene {
   _buildEnemyGrid() {
     this.enemyGrid.clear();
     for (const e of this.enemyPool.active) {
-      if (e.alive) this.enemyGrid.insert(e, e.rect);
+      if (e.alive) {
+        const aabb = {
+          x: e.pos.x + e.collider.ox,
+          y: e.pos.y + e.collider.oy,
+          w: e.collider.w,
+          h: e.collider.h
+        };
+        this.enemyGrid.insert(e, aabb);
+      }
     }
   }
 
   _separateEnemies() {
-    for (const e of this.enemyPool.active) {
-      if (!e.alive) continue;
-      const others = this.enemyGrid.query(e.rect, []);
-      for (const o of others) {
-        if (o === e || !o.alive) continue;
-        const dx = e.pos.x - o.pos.x;
-        const dy = e.pos.y - o.pos.y;
-        const distSq = dx * dx + dy * dy;
-        const minR = e.radius + o.radius;
-        if (distSq > 0 && distSq < minR * minR) {
-          const dist = Math.sqrt(distSq);
-          const push = (minR - dist) / dist * 0.5;
-          e.push(dx * push, dy * push);
-          o.push(-dx * push, -dy * push);
+    // Run multiple iterations for better stability
+    for (let iter = 0; iter < 3; iter++) {
+      for (const e of this.enemyPool.active) {
+        if (!e.alive) continue;
+
+        const aabb = {
+          x: e.pos.x + e.collider.ox,
+          y: e.pos.y + e.collider.oy,
+          w: e.collider.w,
+          h: e.collider.h
+        };
+
+        const others = this.enemyGrid.query(aabb, []);
+        for (const o of others) {
+          if (o === e || !o.alive) continue;
+          const dx = e.pos.x - o.pos.x;
+          const dy = e.pos.y - o.pos.y;
+          const distSq = dx * dx + dy * dy;
+          const minR = e.radius + o.radius; // Keep circle push for smooth separation
+
+          if (distSq > 0 && distSq < minR * minR) {
+            const dist = Math.sqrt(distSq);
+            const push = (minR - dist) / dist * 0.5;
+            e.push(dx * push, dy * push);
+            // We don't push 'o' here because 'o' will be processed in its own turn (or already was)
+            // pushing both can lead to jitter if not careful, but usually it's fine.
+            // Let's push both for faster convergence, but reduce factor.
+            o.push(-dx * push, -dy * push);
+          }
         }
       }
     }
